@@ -5,12 +5,14 @@ import {
   deleteProduct,
   getNearbyProducts,
   getProduct,
+  getPersonalizedRecommendations,
+  getProductRecommendations,
   getProducts,
   getSellerProducts,
   markSold,
   updateProduct
 } from '../controllers/product.controller.js';
-import { authorize, protect } from '../middleware/auth.middleware.js';
+import { authorize, optionalProtect, protect } from '../middleware/auth.middleware.js';
 import { upload } from '../middleware/upload.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
 
@@ -26,8 +28,10 @@ const productValidators = [
 
 router.get('/', getProducts);
 router.get('/nearby', getNearbyProducts);
+router.get('/recommendations/for-you', optionalProtect, getPersonalizedRecommendations);
 router.get('/seller/me', protect, authorize('seller', 'admin'), getSellerProducts);
 router.get('/seller/:sellerId', getSellerProducts);
+router.get('/:id/recommendations', optionalProtect, getProductRecommendations);
 router.get('/:id', getProduct);
 router.post('/', protect, authorize('seller', 'admin'), upload.array('images', 6), productValidators, validate, createProduct);
 router.put('/:id', protect, upload.array('images', 6), updateProduct);

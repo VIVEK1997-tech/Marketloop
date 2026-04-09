@@ -9,6 +9,7 @@ import {
   MapPin,
   MessageCircle,
   PackageCheck,
+  Sparkles,
   Store,
   Wallet
 } from 'lucide-react';
@@ -32,6 +33,8 @@ export default function ProductDetails() {
   const [product, setProduct] = useState(null);
   const [relatedProducts, setRelatedProducts] = useState([]);
   const [sellerListings, setSellerListings] = useState([]);
+  const [aiRecommendations, setAiRecommendations] = useState([]);
+  const [recommendationMeta, setRecommendationMeta] = useState(null);
   const [activeImage, setActiveImage] = useState('');
   const [error, setError] = useState('');
   const [wishlistStatus, setWishlistStatus] = useState('');
@@ -60,6 +63,16 @@ export default function ProductDetails() {
     api.get(`/products/seller/${product.seller._id}`)
       .then(({ data }) => setSellerListings(data.products.filter((item) => item._id !== product._id).slice(0, 4)))
       .catch(() => setSellerListings([]));
+
+    api.get(`/products/${product._id}/recommendations`)
+      .then(({ data }) => {
+        setAiRecommendations(data.recommendations || []);
+        setRecommendationMeta(data.meta || null);
+      })
+      .catch(() => {
+        setAiRecommendations([]);
+        setRecommendationMeta(null);
+      });
   }, [product]);
 
   useEffect(() => {
@@ -307,6 +320,45 @@ export default function ProductDetails() {
                       onWishlist={user ? async (productId) => api.post(`/users/wishlist/${productId}`) : null}
                       isWishlisted={false}
                     />
+                  ))}
+                </div>
+              </article>
+            )}
+
+            {!!aiRecommendations.length && (
+              <article className="rounded-[1.5rem] border border-slate-200 bg-white p-5">
+                <div className="mb-4 flex items-end justify-between gap-4">
+                  <div>
+                    <p className="section-subtitle flex items-center gap-2">
+                      <Sparkles size={15} className="text-brand-600" />
+                      AI recommendations
+                    </p>
+                    <h2 className="section-title mt-2">Smart picks you may also like</h2>
+                  </div>
+                  {recommendationMeta?.model && (
+                    <div className="rounded-full bg-brand-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-brand-700">
+                      {recommendationMeta.model}
+                    </div>
+                  )}
+                </div>
+                {recommendationMeta?.explanation && (
+                  <p className="mb-5 text-sm text-slate-500">{recommendationMeta.explanation}</p>
+                )}
+                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {aiRecommendations.map((item) => (
+                    <div key={item._id} className="space-y-3">
+                      <ProductCard
+                        product={item}
+                        onWishlist={user ? async (productId) => api.post(`/users/wishlist/${productId}`) : null}
+                        isWishlisted={false}
+                      />
+                      {!!item.recommendationReasons?.length && (
+                        <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-600">
+                          <p className="font-bold text-slate-900">Why this was recommended</p>
+                          <p className="mt-1">{item.recommendationReasons.join(' • ')}</p>
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               </article>

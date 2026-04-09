@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, BadgeCheck, Car, ChevronDown, CircleDollarSign, LayoutGrid, MapPin, ShieldCheck, Smartphone, Sofa, Store, Tv, Zap } from 'lucide-react';
+import { ArrowRight, BadgeCheck, Car, ChevronDown, CircleDollarSign, LayoutGrid, MapPin, ShieldCheck, Smartphone, Sofa, Sparkles, Store, Tv, Zap } from 'lucide-react';
 import Filters from '../components/Filters.jsx';
 import ProductCard from '../components/ProductCard.jsx';
 import { useProducts } from '../hooks/useProducts.js';
@@ -45,6 +45,8 @@ export default function Home() {
   const [filters, setFilters] = useState({ keyword: '', category: '', location: '', maxPrice: '', sort: 'latest' });
   const [wishlistMessage, setWishlistMessage] = useState('');
   const [wishlistIds, setWishlistIds] = useState([]);
+  const [recommendedProducts, setRecommendedProducts] = useState([]);
+  const [recommendationMeta, setRecommendationMeta] = useState(null);
   const { products, loading, error } = useProducts(filters);
   const featuredProducts = useMemo(() => products.slice(0, 4), [products]);
   const topPreviewProducts = useMemo(() => products.slice(0, 3), [products]);
@@ -65,12 +67,24 @@ export default function Home() {
   useEffect(() => {
     if (!user) {
       setWishlistIds([]);
+      setRecommendedProducts([]);
+      setRecommendationMeta(null);
       return;
     }
 
     api.get('/users/wishlist')
       .then(({ data }) => setWishlistIds(data.wishlist.map((product) => product._id)))
       .catch(() => setWishlistIds([]));
+
+    api.get('/products/recommendations/for-you')
+      .then(({ data }) => {
+        setRecommendedProducts(data.recommendations || []);
+        setRecommendationMeta(data.meta || null);
+      })
+      .catch(() => {
+        setRecommendedProducts([]);
+        setRecommendationMeta(null);
+      });
   }, [user]);
 
   const chooseCategory = (category) => {
@@ -271,6 +285,44 @@ export default function Home() {
 
       {error && <p className="rounded-xl bg-red-50 p-4 text-red-700">{error}</p>}
       {wishlistMessage && <p className="rounded-xl bg-brand-50 p-4 font-semibold text-brand-700">{wishlistMessage}</p>}
+      {!!recommendedProducts.length && (
+        <section className="space-y-4">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="section-subtitle flex items-center gap-2">
+                <Sparkles size={15} className="text-brand-600" />
+                AI recommendations
+              </p>
+              <h2 className="section-title mt-2">Picked for you based on your activity</h2>
+            </div>
+            {recommendationMeta?.model && (
+              <p className="hidden rounded-full bg-brand-50 px-3 py-2 text-xs font-bold uppercase tracking-[0.15em] text-brand-700 md:block">
+                {recommendationMeta.model}
+              </p>
+            )}
+          </div>
+          {recommendationMeta?.explanation && (
+            <p className="text-sm text-slate-500">{recommendationMeta.explanation}</p>
+          )}
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            {recommendedProducts.map((product) => (
+              <div key={product._id} className="space-y-3">
+                <ProductCard
+                  product={product}
+                  onWishlist={user ? addWishlist : null}
+                  isWishlisted={wishlistIds.includes(product._id)}
+                />
+                {!!product.recommendationReasons?.length && (
+                  <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-600">
+                    <p className="font-bold text-slate-900">Why this was recommended</p>
+                    <p className="mt-1">{product.recommendationReasons.join(' • ')}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       {!loading && !!featuredProducts.length && (
         <section className="space-y-4">
           <div className="flex items-end justify-between gap-4">

@@ -1,10 +1,12 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
+const getTokenFromHeader = (header = '') => (header.startsWith('Bearer ') ? header.split(' ')[1] : null);
+
 export const protect = async (req, res, next) => {
   try {
     const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ') ? header.split(' ')[1] : null;
+    const token = getTokenFromHeader(header);
 
     if (!token) {
       return res.status(401).json({ message: 'Authentication token is required' });
@@ -21,6 +23,28 @@ export const protect = async (req, res, next) => {
     next();
   } catch (error) {
     res.status(401).json({ message: 'Invalid or expired token' });
+  }
+};
+
+export const optionalProtect = async (req, _res, next) => {
+  try {
+    const header = req.headers.authorization || '';
+    const token = getTokenFromHeader(header);
+
+    if (!token) {
+      return next();
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id).select('-password');
+
+    if (user && !user.isBanned) {
+      req.user = user;
+    }
+
+    next();
+  } catch (_error) {
+    next();
   }
 };
 

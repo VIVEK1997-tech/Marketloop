@@ -62,3 +62,5 @@ npm run dev
 - Admin routes require a user with `role: "admin"` in MongoDB.
 - Image uploads accept either multipart files or URL strings. If Cloudinary variables are missing, URL strings still work for demos.
 - Payment, push notifications, reviews, reporting, and AI recommendations are intentionally left as extension points.
+# E-commerce-web
+MarketLoop is a real-time OLX-like marketplace where users can buy, sell, and chat instantly.

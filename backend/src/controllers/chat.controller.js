@@ -1,5 +1,6 @@
 import Conversation from '../models/Conversation.js';
 import Message from '../models/Message.js';
+import Product from '../models/Product.js';
 
 export const getOrCreateConversation = async ({ buyerId, sellerId, productId }) => {
   const participants = [buyerId, sellerId].sort();
@@ -13,6 +14,23 @@ export const getOrCreateConversation = async ({ buyerId, sellerId, productId }) 
 };
 
 export const createConversation = async (req, res) => {
+  if (!req.body.productId) {
+    return res.status(400).json({ message: 'productId is required to start a buyer-seller chat' });
+  }
+
+  const product = await Product.findById(req.body.productId);
+  if (!product) {
+    return res.status(404).json({ message: 'Product not found' });
+  }
+
+  if (product.seller.toString() !== req.body.sellerId) {
+    return res.status(400).json({ message: 'Seller does not match the selected product' });
+  }
+
+  if (product.seller.equals(req.user._id)) {
+    return res.status(400).json({ message: 'Sellers cannot start a buyer chat on their own listing' });
+  }
+
   const conversation = await getOrCreateConversation({
     buyerId: req.user._id.toString(),
     sellerId: req.body.sellerId,

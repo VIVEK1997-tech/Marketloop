@@ -12,7 +12,7 @@ router.post(
   '/conversations',
   [
     body('sellerId').isMongoId().withMessage('sellerId is required'),
-    body('productId').optional().isMongoId().withMessage('productId must be valid')
+    body('productId').isMongoId().withMessage('productId is required')
   ],
   validate,
   createConversation

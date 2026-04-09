@@ -4,6 +4,7 @@ import { Send } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { api } from '../services/api.js';
 import { getSocket } from '../services/socket.js';
+import { getProfileImage } from '../utils/avatar.js';
 
 export default function Chat() {
   const { state } = useLocation();
@@ -71,8 +72,17 @@ export default function Chat() {
               className={`w-full rounded-xl p-3 text-left ${activeId === conversation._id ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-100'}`}
               onClick={() => setActiveId(conversation._id)}
             >
-              <p className="font-bold">{other?.name || 'User'}</p>
-              <p className="text-sm text-slate-500">{conversation.product?.title || conversation.lastMessage?.message || 'Start chatting'}</p>
+              <div className="flex items-center gap-3">
+                <img
+                  src={getProfileImage(other?.profileImage, other?.name)}
+                  alt={other?.name || 'User'}
+                  className="h-11 w-11 rounded-full object-cover"
+                />
+                <div className="min-w-0">
+                  <p className="font-bold">{other?.name || 'User'}</p>
+                  <p className="truncate text-sm text-slate-500">{conversation.product?.title || conversation.lastMessage?.message || 'Start chatting'}</p>
+                </div>
+              </div>
             </button>
           );
         })}

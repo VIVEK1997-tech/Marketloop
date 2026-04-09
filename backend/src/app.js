@@ -7,6 +7,7 @@ import authRoutes from './routes/auth.routes.js';
 import productRoutes from './routes/product.routes.js';
 import userRoutes from './routes/user.routes.js';
 import chatRoutes from './routes/chat.routes.js';
+import chatbotRoutes from './routes/chatbot.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import { notFound, errorHandler } from './middleware/error.middleware.js';
 
@@ -25,6 +26,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/chats', chatRoutes);
+app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.use(notFound);

@@ -3,8 +3,21 @@ import { api } from '../services/api.js';
 import { disconnectSocket } from '../services/socket.js';
 
 const AuthContext = createContext(null);
+const PENDING_VERIFICATION_EMAIL_KEY = 'pendingVerificationEmail';
 
-const normalizeUser = (user) => (user ? { ...user, id: user.id || user._id } : null);
+const normalizeUser = (user) => {
+  if (!user) return null;
+  const roles = Array.isArray(user.roles) && user.roles.length ? user.roles : user.role ? [user.role] : ['buyer'];
+  const activeRole = user.activeRole || user.role || (roles.includes('buyer') ? 'buyer' : roles[0]);
+
+  return {
+    ...user,
+    id: user.id || user._id,
+    roles,
+    role: activeRole,
+    activeRole
+  };
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
@@ -13,6 +26,7 @@ export const AuthProvider = ({ children }) => {
   });
   const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [loading, setLoading] = useState(false);
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState(() => localStorage.getItem(PENDING_VERIFICATION_EMAIL_KEY) || '');
 
   useEffect(() => {
     const refresh = async () => {
@@ -29,12 +43,34 @@ export const AuthProvider = ({ children }) => {
     refresh();
   }, [token]);
 
+  const persistUser = (nextUser) => {
+    const normalizedUser = normalizeUser(nextUser);
+    if (normalizedUser) {
+      localStorage.setItem('user', JSON.stringify(normalizedUser));
+    } else {
+      localStorage.removeItem('user');
+    }
+    setUser(normalizedUser);
+  };
+
   const persistAuth = (data) => {
     const authUser = normalizeUser(data.user);
     localStorage.setItem('token', data.token);
     localStorage.setItem('user', JSON.stringify(authUser));
+    localStorage.removeItem(PENDING_VERIFICATION_EMAIL_KEY);
     setToken(data.token);
-    setUser(authUser);
+    persistUser(authUser);
+    setPendingVerificationEmail('');
+  };
+
+  const persistPendingVerificationEmail = (email) => {
+    const normalizedEmail = email || '';
+    if (normalizedEmail) {
+      localStorage.setItem(PENDING_VERIFICATION_EMAIL_KEY, normalizedEmail);
+    } else {
+      localStorage.removeItem(PENDING_VERIFICATION_EMAIL_KEY);
+    }
+    setPendingVerificationEmail(normalizedEmail);
   };
 
   const login = async (credentials) => {
@@ -42,6 +78,12 @@ export const AuthProvider = ({ children }) => {
     try {
       const { data } = await api.post('/auth/login', credentials);
       persistAuth(data);
+      return data;
+    } catch (error) {
+      if (error.response?.data?.message === 'Please verify your email first') {
+        persistPendingVerificationEmail(credentials.email);
+      }
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -51,7 +93,30 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     try {
       const { data } = await api.post('/auth/register', payload);
-      persistAuth(data);
+      persistPendingVerificationEmail(data.email || payload.email);
+      return data;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async ({ email, otp }) => {
+    setLoading(true);
+    try {
+      const { data } = await api.post('/auth/verify-otp', { email, otp });
+      persistPendingVerificationEmail('');
+      return data;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendOtp = async (email) => {
+    setLoading(true);
+    try {
+      const { data } = await api.post('/auth/resend-otp', { email });
+      persistPendingVerificationEmail(data.email || email);
+      return data;
     } finally {
       setLoading(false);
     }
@@ -61,11 +126,26 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setToken(null);
-    setUser(null);
+    persistUser(null);
     disconnectSocket();
   };
 
-  const value = useMemo(() => ({ user, token, loading, login, register, logout, setUser }), [user, token, loading]);
+  const value = useMemo(
+    () => ({
+      user,
+      token,
+      loading,
+      pendingVerificationEmail,
+      login,
+      register,
+      verifyOtp,
+      resendOtp,
+      logout,
+      setUser: persistUser,
+      setPendingVerificationEmail: persistPendingVerificationEmail
+    }),
+    [user, token, loading, pendingVerificationEmail]
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

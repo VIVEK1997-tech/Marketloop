@@ -10,12 +10,12 @@ import {
   MessageCircle,
   PackageCheck,
   Sparkles,
-  Store,
   Wallet
 } from 'lucide-react';
 import ProductCard from '../components/ProductCard.jsx';
 import { api, getErrorMessage } from '../services/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { getProfileImage } from '../utils/avatar.js';
 
 const paymentMethods = [
   { id: 'upi', label: 'UPI', description: 'Pay instantly using any UPI app', icon: Wallet },
@@ -45,6 +45,14 @@ export default function ProductDetails() {
   const [paymentLoading, setPaymentLoading] = useState(false);
 
   useEffect(() => {
+    setError('');
+    setProduct(null);
+    setRelatedProducts([]);
+    setSellerListings([]);
+    setAiRecommendations([]);
+    setRecommendationMeta(null);
+    setWishlistStatus('');
+    setPaymentOpen(false);
     api.get(`/products/${id}`)
       .then(({ data }) => {
         setProduct(data.product);
@@ -54,7 +62,7 @@ export default function ProductDetails() {
   }, [id]);
 
   useEffect(() => {
-    if (!product) return;
+    if (!product || !product.seller?._id) return;
 
     api.get('/products', { params: { category: product.category, sort: 'latest' } })
       .then(({ data }) => setRelatedProducts(data.products.filter((item) => item._id !== product._id).slice(0, 4)))
@@ -106,7 +114,12 @@ export default function ProductDetails() {
     ];
   }, [product]);
 
+  const sellerId = product?.seller?._id || '';
+  const isOwner = Boolean(user && sellerId && user.id === sellerId);
+  const canContactSeller = Boolean(user && sellerId && !isOwner);
+
   const startChat = async () => {
+    if (!sellerId) return;
     const { data } = await api.post('/chats/conversations', { sellerId: product.seller._id, productId: product._id });
     navigate('/chat', { state: { conversationId: data.conversation._id } });
   };
@@ -193,7 +206,7 @@ export default function ProductDetails() {
                   <span>Posted on {formatDate(product.createdAt)}</span>
                 </div>
 
-                {user && user.id !== product.seller._id ? (
+                {canContactSeller ? (
                   <div className="mt-6 grid gap-3">
                     <button className="btn w-full" onClick={() => setPaymentOpen(true)}>
                       <IndianRupee size={18} /> Buy now / Pay
@@ -212,21 +225,27 @@ export default function ProductDetails() {
                     </button>
                     {wishlistStatus && <p className="text-sm font-semibold text-brand-700">{wishlistStatus}</p>}
                   </div>
-                ) : (
+                ) : isOwner ? (
                   <Link className="btn-secondary mt-6 flex w-full justify-center" to={`/products/${product._id}/edit`}>
                     Edit listing
+                  </Link>
+                ) : (
+                  <Link className="btn-secondary mt-6 flex w-full justify-center" to="/login">
+                    Login to buy or chat
                   </Link>
                 )}
               </div>
 
               <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-start gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-50 text-brand-700">
-                    <Store />
-                  </div>
+                  <img
+                    src={getProfileImage(product.seller?.profileImage, product.seller?.name)}
+                    alt={product.seller?.name || 'Seller'}
+                    className="h-16 w-16 rounded-full border border-slate-200 object-cover"
+                  />
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">Posted by</p>
-                    <p className="text-xl font-black text-slate-900">{product.seller?.name}</p>
+                    <p className="text-xl font-black text-slate-900">{product.seller?.name || 'Marketplace Seller'}</p>
                     <p className="mt-1 text-sm text-slate-500">Member since {formatDate(product.seller?.createdAt || product.createdAt)}</p>
                     <p className={`mt-3 text-sm font-semibold ${product.seller?.online ? 'text-emerald-600' : 'text-slate-500'}`}>
                       {product.seller?.online ? 'Online now' : 'Offline'}
@@ -243,9 +262,15 @@ export default function ProductDetails() {
                     <p className="text-sm text-slate-500">Interested buyers</p>
                   </div>
                 </div>
-                <button className="btn-secondary mt-5 w-full" onClick={startChat}>
-                  Chat with seller
-                </button>
+                {sellerId ? (
+                  <button className="btn-secondary mt-5 w-full" onClick={startChat} disabled={!canContactSeller}>
+                    {canContactSeller ? 'Chat with seller' : isOwner ? 'Your listing' : 'Login to chat'}
+                  </button>
+                ) : (
+                  <div className="mt-5 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                    Seller details are loading for this listing.
+                  </div>
+                )}
               </div>
 
               <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">

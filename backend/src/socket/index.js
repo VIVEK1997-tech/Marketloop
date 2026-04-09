@@ -3,6 +3,7 @@ import { Server } from 'socket.io';
 import User from '../models/User.js';
 import Conversation from '../models/Conversation.js';
 import { sendMessage } from '../controllers/chat.controller.js';
+import { registerChatbotSocket } from './chatbot.socket.js';
 
 const onlineUsers = new Map();
 
@@ -30,6 +31,7 @@ export const configureSocket = (server) => {
     onlineUsers.set(userId, socket.id);
     await User.findByIdAndUpdate(userId, { online: true });
     socket.broadcast.emit('userOnline', { userId });
+    registerChatbotSocket(io, socket);
 
     socket.on('joinConversation', ({ conversationId }) => {
       socket.join(conversationId);

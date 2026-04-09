@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, getErrorMessage } from '../services/api.js';
+import { useAuth } from '../context/AuthContext.jsx';
 
 const initialState = { title: '', description: '', price: '', category: '', location: '', images: '' };
 
 export default function ProductForm() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [form, setForm] = useState(initialState);
   const [files, setFiles] = useState([]);
   const [error, setError] = useState('');
@@ -61,6 +63,17 @@ export default function ProductForm() {
       setSaving(false);
     }
   };
+
+  const userRoles = user?.roles || (user?.role ? [user.role] : []);
+  if (!userRoles.includes('seller') && !userRoles.includes('admin')) {
+    return (
+      <div className="card mx-auto max-w-2xl space-y-4">
+        <h1 className="text-3xl font-black">Seller access required</h1>
+        <p className="text-slate-600">Only sellers can create or manage listings. Enable seller access from your dashboard to start posting products.</p>
+        <Link className="btn w-fit" to="/dashboard">Go to dashboard</Link>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={submit} className="card mx-auto max-w-3xl space-y-4">

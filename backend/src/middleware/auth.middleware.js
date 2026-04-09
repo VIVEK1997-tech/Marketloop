@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import { resolveUserRoles } from '../utils/roles.js';
 
 const getTokenFromHeader = (header = '') => (header.startsWith('Bearer ') ? header.split(' ')[1] : null);
 
@@ -49,7 +50,8 @@ export const optionalProtect = async (req, _res, next) => {
 };
 
 export const authorize = (...roles) => (req, res, next) => {
-  if (!roles.includes(req.user.role)) {
+  const userRoles = resolveUserRoles(req.user);
+  if (!roles.some((role) => userRoles.includes(role))) {
     return res.status(403).json({ message: 'You do not have permission to perform this action' });
   }
   next();

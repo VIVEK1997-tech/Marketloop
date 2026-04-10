@@ -15,7 +15,9 @@ const productSchema = new mongoose.Schema(
     seller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     status: { type: String, enum: ['available', 'sold'], default: 'available', index: true },
     views: { type: Number, default: 0 },
-    interestCount: { type: Number, default: 0 }
+    interestCount: { type: Number, default: 0 },
+    averageRating: { type: Number, default: 0, min: 0, max: 5 },
+    totalReviews: { type: Number, default: 0, min: 0 }
   },
   { timestamps: true }
 );

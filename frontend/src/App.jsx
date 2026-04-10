@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import Chat from './pages/Chat.jsx';
 import Admin from './pages/Admin.jsx';
 import Wishlist from './pages/Wishlist.jsx';
+import PaymentHistory from './pages/PaymentHistory.jsx';
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/wishlist" element={<Wishlist />} />
+          <Route path="/payments" element={<PaymentHistory />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/admin" element={<Admin />} />
         </Route>

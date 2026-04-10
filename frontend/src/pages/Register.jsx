@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { getErrorMessage } from '../services/api.js';
+import PasswordInput from '../components/PasswordInput.jsx';
 
 export default function Register() {
   const navigate = useNavigate();
@@ -33,7 +34,7 @@ export default function Register() {
       <input className="input" name="name" placeholder="Full name" value={form.name} onChange={update} />
       <input className="input" name="email" type="email" placeholder="Email" value={form.email} onChange={update} />
       <input className="input" name="phone" placeholder="Phone number (optional)" value={form.phone} onChange={update} />
-      <input className="input" name="password" type="password" placeholder="Password" value={form.password} onChange={update} />
+      <PasswordInput name="password" value={form.password} onChange={update} />
       <select className="input" name="role" value={form.role} onChange={update}>
         <option value="buyer">Buyer</option>
         <option value="seller">Seller</option>

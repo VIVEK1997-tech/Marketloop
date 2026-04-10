@@ -1,6 +1,57 @@
 import User from '../models/User.js';
 import Product from '../models/Product.js';
+import Review from '../models/Review.js';
+import Conversation from '../models/Conversation.js';
 import { resolveUserRoles, serializeAuthUser } from '../utils/roles.js';
+
+const calculateAverage = (reviews) => {
+  if (!reviews.length) return 0;
+  return Math.round((reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length) * 10) / 10;
+};
+
+const buildBreakdown = (reviews) => [5, 4, 3, 2, 1].reduce((data, rating) => {
+  data[rating] = reviews.filter((review) => review.rating === rating).length;
+  return data;
+}, {});
+
+export const getUserRatings = async (req, res) => {
+  const user = await User.findById(req.params.id).select('name profileImage averageRating totalReviews');
+  if (!user) return res.status(404).json({ message: 'User not found' });
+
+  const reviews = await Review.find({ seller: req.params.id, reviewType: 'seller' })
+    .populate('reviewer', 'name profileImage')
+    .populate('product', 'title')
+    .sort('-createdAt');
+
+  res.json({
+    seller: user,
+    averageRating: user.averageRating || calculateAverage(reviews),
+    totalReviews: user.totalReviews || reviews.length,
+    breakdown: buildBreakdown(reviews),
+    topRated: reviews.length >= 3 && calculateAverage(reviews) >= 4.5,
+    reviews
+  });
+};
+
+export const getProfile = async (req, res) => {
+  const [user, listingsCount, conversationCount] = await Promise.all([
+    User.findById(req.user._id).select('-password'),
+    Product.countDocuments({ seller: req.user._id }),
+    Conversation.countDocuments({ participants: req.user._id })
+  ]);
+
+  res.json({
+    user: serializeAuthUser(user),
+    stats: {
+      listingsCount,
+      wishlistCount: user?.wishlist?.length ?? 0,
+      conversationCount,
+      averageRating: user?.averageRating ?? 0,
+      totalReviews: user?.totalReviews ?? 0,
+      memberSince: user?.createdAt
+    }
+  });
+};
 
 export const updateProfile = async (req, res) => {
   const updates = ['name', 'phone', 'profileImage', 'location'].reduce((data, key) => {

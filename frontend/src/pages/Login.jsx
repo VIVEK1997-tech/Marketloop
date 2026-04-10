@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { getErrorMessage } from '../services/api.js';
+import PasswordInput from '../components/PasswordInput.jsx';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -31,7 +32,7 @@ export default function Login() {
       {location.state?.verified && <p className="rounded-xl bg-emerald-50 p-3 text-emerald-700">Email verified successfully. You can login now.</p>}
       {error && <p className="rounded-xl bg-red-50 p-3 text-red-700">{error}</p>}
       <input className="input" type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-      <input className="input" type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+      <PasswordInput value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
       <button className="btn w-full" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button>
       {needsVerification && (
         <Link

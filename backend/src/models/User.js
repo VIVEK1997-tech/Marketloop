@@ -34,6 +34,8 @@ const userSchema = new mongoose.Schema(
     profileImage: String,
     location: locationSchema,
     wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
+    averageRating: { type: Number, default: 0, min: 0, max: 5 },
+    totalReviews: { type: Number, default: 0, min: 0 },
     isVerified: { type: Boolean, default: false, index: true },
     otp: { type: String, select: false },
     otpExpiry: { type: Date, select: false },

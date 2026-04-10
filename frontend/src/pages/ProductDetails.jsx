@@ -13,14 +13,18 @@ import {
   Wallet
 } from 'lucide-react';
 import ProductCard from '../components/ProductCard.jsx';
+import ReviewForm from '../components/ReviewForm.jsx';
+import ReviewList from '../components/ReviewList.jsx';
+import StarRating from '../components/StarRating.jsx';
 import { api, getErrorMessage } from '../services/api.js';
+import { loadRazorpayCheckout } from '../services/razorpay.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { getProfileImage } from '../utils/avatar.js';
 
 const paymentMethods = [
   { id: 'upi', label: 'UPI', description: 'Pay instantly using any UPI app', icon: Wallet },
-  { id: 'card', label: 'Credit / Debit Card', description: 'Secure card payment for this item', icon: CreditCard },
-  { id: 'cod', label: 'Pay on meetup', description: 'Confirm with seller and pay at pickup', icon: PackageCheck }
+  { id: 'card', label: 'Credit / Debit Card', description: 'Secure card payment', icon: CreditCard },
+  { id: 'netbanking', label: 'Net banking', description: 'Pay securely from your bank', icon: PackageCheck }
 ];
 
 const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
@@ -40,9 +44,15 @@ export default function ProductDetails() {
   const [wishlistStatus, setWishlistStatus] = useState('');
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
-  const [selectedMethod, setSelectedMethod] = useState('upi');
   const [paymentStatus, setPaymentStatus] = useState('');
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentReceipt, setPaymentReceipt] = useState(null);
+  const [productReviews, setProductReviews] = useState({ reviews: [], averageRating: 0, totalReviews: 0, breakdown: {} });
+  const [sellerReviews, setSellerReviews] = useState({ reviews: [], averageRating: 0, totalReviews: 0, breakdown: {}, topRated: false });
+  const [reviewEligibility, setReviewEligibility] = useState(null);
+  const [reviewMessage, setReviewMessage] = useState('');
+  const [productReviewSort, setProductReviewSort] = useState('latest');
+  const [sellerReviewSort, setSellerReviewSort] = useState('latest');
 
   useEffect(() => {
     setError('');
@@ -52,6 +62,8 @@ export default function ProductDetails() {
     setAiRecommendations([]);
     setRecommendationMeta(null);
     setWishlistStatus('');
+    setReviewMessage('');
+    setReviewEligibility(null);
     setPaymentOpen(false);
     api.get(`/products/${id}`)
       .then(({ data }) => {
@@ -82,6 +94,33 @@ export default function ProductDetails() {
         setRecommendationMeta(null);
       });
   }, [product]);
+
+  useEffect(() => {
+    if (!product) return;
+
+    api.get(`/reviews/product/${product._id}`, { params: { sort: productReviewSort } })
+      .then(({ data }) => setProductReviews(data))
+      .catch(() => setProductReviews({ reviews: [], averageRating: 0, totalReviews: 0, breakdown: {} }));
+  }, [product, productReviewSort]);
+
+  useEffect(() => {
+    if (!product?.seller?._id) return;
+
+    api.get(`/reviews/seller/${product.seller._id}`, { params: { sort: sellerReviewSort } })
+      .then(({ data }) => setSellerReviews(data))
+      .catch(() => setSellerReviews({ reviews: [], averageRating: 0, totalReviews: 0, breakdown: {}, topRated: false }));
+  }, [product, sellerReviewSort]);
+
+  useEffect(() => {
+    if (!user || !product?._id) {
+      setReviewEligibility(null);
+      return;
+    }
+
+    api.get(`/reviews/eligibility/${product._id}`)
+      .then(({ data }) => setReviewEligibility(data))
+      .catch(() => setReviewEligibility(null));
+  }, [user, product]);
 
   useEffect(() => {
     if (!user) {
@@ -117,6 +156,8 @@ export default function ProductDetails() {
   const sellerId = product?.seller?._id || '';
   const isOwner = Boolean(user && sellerId && user.id === sellerId);
   const canContactSeller = Boolean(user && sellerId && !isOwner);
+  const canReviewProduct = Boolean(reviewEligibility?.eligible && !reviewEligibility?.alreadyReviewed?.product);
+  const canReviewSeller = Boolean(reviewEligibility?.eligible && !reviewEligibility?.alreadyReviewed?.seller);
 
   const startChat = async () => {
     if (!sellerId) return;
@@ -134,6 +175,19 @@ export default function ProductDetails() {
     }
   };
 
+  const refreshReviewData = async (message) => {
+    setReviewMessage(message || 'Review submitted successfully');
+    const [{ data: nextProductReviews }, { data: nextSellerReviews }, eligibilityResponse] = await Promise.all([
+      api.get(`/reviews/product/${product._id}`, { params: { sort: productReviewSort } }),
+      api.get(`/reviews/seller/${product.seller._id}`, { params: { sort: sellerReviewSort } }),
+      user ? api.get(`/reviews/eligibility/${product._id}`) : Promise.resolve({ data: null })
+    ]);
+
+    setProductReviews(nextProductReviews);
+    setSellerReviews(nextSellerReviews);
+    if (eligibilityResponse.data) setReviewEligibility(eligibilityResponse.data);
+  };
+
   const proceedPayment = async () => {
     if (!user) {
       navigate('/login');
@@ -142,11 +196,49 @@ export default function ProductDetails() {
 
     setPaymentLoading(true);
     setPaymentStatus('');
-    setTimeout(() => {
-      const methodLabel = paymentMethods.find((item) => item.id === selectedMethod)?.label || 'Selected method';
+    setPaymentReceipt(null);
+
+    try {
+      await loadRazorpayCheckout();
+      const { data } = await api.post('/payment/create-order', { productId: product._id });
+      const options = {
+        ...data.checkout,
+        image: '/favicon.svg',
+        theme: { color: '#0891b2' },
+        handler: async (response) => {
+          try {
+            const verification = await api.post('/payment/verify', response);
+            setPaymentStatus('Payment successful. Your receipt is ready.');
+            setPaymentReceipt(verification.data.receipt);
+            setProduct((current) => current ? { ...current, status: 'sold' } : current);
+          } catch (err) {
+            setPaymentStatus(getErrorMessage(err));
+          } finally {
+            setPaymentLoading(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setPaymentLoading(false);
+            setPaymentStatus('Payment window closed before completion.');
+          }
+        }
+      };
+
+      const razorpay = new window.Razorpay(options);
+      razorpay.on('payment.failed', async (response) => {
+        await api.post('/payment/failed', {
+          razorpayOrderId: data.order.razorpayOrderId,
+          error: response.error
+        }).catch(() => {});
+        setPaymentLoading(false);
+        setPaymentStatus(response.error?.description || 'Payment failed. Please try again.');
+      });
+      razorpay.open();
+    } catch (err) {
       setPaymentLoading(false);
-      setPaymentStatus(`Payment initiated with ${methodLabel}. Seller has been notified and your order request is being processed.`);
-    }, 1100);
+      setPaymentStatus(getErrorMessage(err));
+    }
   };
 
   if (error) return <p className="card text-red-700">{error}</p>;
@@ -197,6 +289,13 @@ export default function ProductDetails() {
             <aside className="space-y-4 md:sticky md:top-24 md:self-start">
               <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
                 <p className="text-4xl font-black text-slate-900">{formatCurrency(product.price)}</p>
+                <div className="mt-3 flex items-center gap-2">
+                  <StarRating value={productReviews.averageRating || product.averageRating} readOnly size={18} />
+                  <span className="text-sm font-semibold text-slate-700">
+                    {(productReviews.averageRating || product.averageRating || 0).toFixed(1)}
+                  </span>
+                  <span className="text-sm text-slate-500">({productReviews.totalReviews || product.totalReviews || 0} product reviews)</span>
+                </div>
                 <div className="mt-4 flex items-center gap-2 text-slate-600">
                   <MapPin size={18} />
                   <span>{product.location}</span>
@@ -208,7 +307,7 @@ export default function ProductDetails() {
 
                 {canContactSeller ? (
                   <div className="mt-6 grid gap-3">
-                    <button className="btn w-full" onClick={() => setPaymentOpen(true)}>
+                    <button className="btn w-full" onClick={() => setPaymentOpen(true)} disabled={product.status === 'sold'}>
                       <IndianRupee size={18} /> Buy now / Pay
                     </button>
                     <button className="btn-secondary w-full border-brand-600 text-brand-700 hover:bg-brand-50" onClick={() => setPaymentOpen(true)}>
@@ -250,6 +349,18 @@ export default function ProductDetails() {
                     <p className={`mt-3 text-sm font-semibold ${product.seller?.online ? 'text-emerald-600' : 'text-slate-500'}`}>
                       {product.seller?.online ? 'Online now' : 'Offline'}
                     </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <StarRating value={sellerReviews.averageRating || product.seller?.averageRating} readOnly size={16} />
+                      <span className="text-sm font-bold text-slate-700">
+                        {(sellerReviews.averageRating || product.seller?.averageRating || 0).toFixed(1)}
+                      </span>
+                      <span className="text-sm text-slate-500">({sellerReviews.totalReviews || product.seller?.totalReviews || 0})</span>
+                      {sellerReviews.topRated && (
+                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                          Top Rated Seller
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-3">
@@ -328,6 +439,57 @@ export default function ProductDetails() {
                 <p className="whitespace-pre-line leading-7 text-slate-600">{product.description}</p>
               </div>
             </article>
+
+            {reviewMessage && <p className="rounded-xl bg-emerald-50 p-4 font-semibold text-emerald-700">{reviewMessage}</p>}
+
+            {user && reviewEligibility && !reviewEligibility.eligible && !reviewEligibility.isOwner && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+                {reviewEligibility.reason}
+              </div>
+            )}
+
+            {(canReviewProduct || canReviewSeller) && (
+              <article className="rounded-[1.5rem] border border-slate-200 bg-white p-5">
+                <div className="mb-4">
+                  <p className="section-subtitle">Write a review</p>
+                  <h2 className="section-title mt-2">Help other buyers trust this listing</h2>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {canReviewProduct && (
+                    <ReviewForm productId={product._id} reviewType="product" onSubmitted={(_review, message) => refreshReviewData(message)} />
+                  )}
+                  {canReviewSeller && (
+                    <ReviewForm productId={product._id} reviewType="seller" onSubmitted={(_review, message) => refreshReviewData(message)} />
+                  )}
+                </div>
+              </article>
+            )}
+
+            {reviewEligibility?.alreadyReviewed?.product && reviewEligibility?.alreadyReviewed?.seller && (
+              <div className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-600">
+                You already reviewed this product and seller.
+              </div>
+            )}
+
+            <ReviewList
+              title="Product reviews"
+              reviews={productReviews.reviews}
+              averageRating={productReviews.averageRating}
+              totalReviews={productReviews.totalReviews}
+              breakdown={productReviews.breakdown}
+              sort={productReviewSort}
+              onSortChange={setProductReviewSort}
+            />
+
+            <ReviewList
+              title="Seller feedback"
+              reviews={sellerReviews.reviews}
+              averageRating={sellerReviews.averageRating}
+              totalReviews={sellerReviews.totalReviews}
+              breakdown={sellerReviews.breakdown}
+              sort={sellerReviewSort}
+              onSortChange={setSellerReviewSort}
+            />
 
             {!!relatedProducts.length && (
               <article className="rounded-[1.5rem] border border-slate-200 bg-white p-5">
@@ -411,8 +573,7 @@ export default function ProductDetails() {
                 return (
                   <button
                     key={method.id}
-                    onClick={() => setSelectedMethod(method.id)}
-                    className={`rounded-2xl border p-4 text-left transition ${selectedMethod === method.id ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-200' : 'border-slate-200 hover:border-brand-300'}`}
+                    className="rounded-2xl border border-slate-200 p-4 text-left transition hover:border-brand-300 hover:bg-brand-50"
                   >
                     <Icon className="text-brand-700" />
                     <p className="mt-3 font-black text-slate-900">{method.label}</p>
@@ -435,14 +596,25 @@ export default function ProductDetails() {
             </div>
 
             {paymentStatus && (
-              <div className="mt-4 rounded-2xl bg-emerald-50 p-4 text-emerald-700">
+              <div className={`mt-4 rounded-2xl p-4 ${paymentStatus.toLowerCase().includes('success') ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
                 {paymentStatus}
+              </div>
+            )}
+
+            {paymentReceipt && (
+              <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-5 text-sm text-emerald-900">
+                <p className="text-lg font-black">Payment receipt</p>
+                <p className="mt-2">Receipt ID: {paymentReceipt.receiptId}</p>
+                <p>Product: {paymentReceipt.product}</p>
+                <p>Seller: {paymentReceipt.seller}</p>
+                <p>Amount: {formatCurrency(paymentReceipt.amount)}</p>
+                <p>Method: {paymentReceipt.method}</p>
               </div>
             )}
 
             <div className="mt-6 flex flex-wrap gap-3">
               <button className="btn" onClick={proceedPayment} disabled={paymentLoading}>
-                {paymentLoading ? 'Processing...' : 'Proceed to payment'}
+                {paymentLoading ? 'Processing...' : 'Open Razorpay checkout'}
               </button>
               <button className="btn-secondary" onClick={startChat}>Ask seller first</button>
             </div>

@@ -219,7 +219,7 @@ export const getNearbyProducts = async (req, res) => {
 export const getProduct = async (req, res) => {
   const product = await Product.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } }, { new: true }).populate(
     'seller',
-    'name phone profileImage location online createdAt'
+    'name phone profileImage location online createdAt averageRating totalReviews'
   );
 
   if (!product) return res.status(404).json({ message: 'Product not found' });

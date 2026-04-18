@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, getErrorMessage } from '../services/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { groceryCategories } from '../utils/groceryData.js';
 
 const initialState = { title: '', description: '', price: '', category: '', location: '', images: '' };
 
@@ -78,13 +79,24 @@ export default function ProductForm() {
   return (
     <form onSubmit={submit} className="card mx-auto max-w-3xl space-y-4">
       <h1 className="text-3xl font-black">{id ? 'Edit listing' : 'Create listing'}</h1>
+      <p className="text-sm text-slate-500">Create grocery-style listings for fruits, vegetables, herbs, and fresh produce buyers can discover quickly.</p>
       {error && <p className="rounded-xl bg-red-50 p-3 text-red-700">{error}</p>}
-      <input className="input" name="title" placeholder="Title" value={form.title} onChange={update} />
-      <textarea className="input min-h-40" name="description" placeholder="Description" value={form.description} onChange={update} />
+      <input className="input" name="title" placeholder="Example: Premium Alphonso Mango Box" value={form.title} onChange={update} />
+      <textarea className="input min-h-40" name="description" placeholder="Describe freshness, quantity, sourcing, and delivery details" value={form.description} onChange={update} />
       <div className="grid gap-4 md:grid-cols-3">
-        <input className="input" name="price" type="number" placeholder="Price" value={form.price} onChange={update} />
-        <input className="input" name="category" placeholder="Category" value={form.category} onChange={update} />
-        <input className="input" name="location" placeholder="Location" value={form.location} onChange={update} />
+        <input className="input" name="price" type="number" placeholder="Price in Rs." value={form.price} onChange={update} />
+        <select className="input" name="category" value={form.category} onChange={update}>
+          <option value="">Select category</option>
+          {form.category && !groceryCategories.some((category) => category.value === form.category) && (
+            <option value={form.category}>{form.category}</option>
+          )}
+          {groceryCategories.map((category) => (
+            <option key={category.value} value={category.value}>
+              {category.label}
+            </option>
+          ))}
+        </select>
+        <input className="input" name="location" placeholder="Delivery city or locality" value={form.location} onChange={update} />
       </div>
       <div className="space-y-2">
         <label className="block text-sm font-semibold text-slate-700" htmlFor="product-images">Upload product images</label>

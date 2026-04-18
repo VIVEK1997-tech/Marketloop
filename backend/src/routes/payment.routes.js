@@ -35,6 +35,11 @@ router.post(
   validate,
   verifyPayment
 );
+router.post('/verify-payment', [
+  body('razorpay_order_id').notEmpty().withMessage('razorpay_order_id is required'),
+  body('razorpay_payment_id').notEmpty().withMessage('razorpay_payment_id is required'),
+  body('razorpay_signature').notEmpty().withMessage('razorpay_signature is required')
+], validate, verifyPayment);
 router.post('/failed', markPaymentFailed);
 router.get('/orders', getMyOrders);
 router.get('/orders/:orderId', getPaymentByOrder);

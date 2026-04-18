@@ -12,6 +12,14 @@ const parseNumber = (value) => {
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const categoryAliases = {
+  freshFruits: ['fresh fruits', 'fruit', 'fruits', 'apple', 'apples', 'banana', 'bananas', 'mango', 'mangoes', 'orange', 'oranges', 'grapes', 'papaya'],
+  freshVegetables: ['fresh vegetables', 'vegetable', 'vegetables', 'tomato', 'tomatoes', 'onion', 'onions', 'capsicum', 'cauliflower', 'brinjal'],
+  leafyGreens: ['leafy greens', 'greens', 'spinach', 'lettuce', 'mint', 'coriander', 'palak', 'greens bundle'],
+  rootVegetables: ['root vegetables', 'potato', 'potatoes', 'carrot', 'carrots', 'beetroot', 'radish', 'sweet potato'],
+  exoticFruits: ['exotic fruits', 'kiwi', 'dragon fruit', 'dragon fruits', 'avocado', 'avocados', 'berries', 'blueberries'],
+  herbsSeasonings: ['herbs & seasonings', 'herbs', 'seasonings', 'ginger', 'garlic', 'green chilli', 'chilli', 'curry leaves', 'basil'],
+  saladsSprouts: ['salads & sprouts', 'salads', 'sprouts', 'salad bowl', 'cucumber', 'salad leaves'],
+  organicProduce: ['organic produce', 'organic', 'organic fruits', 'organic vegetables', 'organic veggie', 'organic fruit'],
   mobiles: ['mobile', 'mobiles', 'mobile phone', 'mobile phones', 'smartphone', 'smartphones', 'phone', 'phones'],
   motorcycles: ['motorcycle', 'motorcycles', 'bike', 'bikes', 'scooter', 'scooters'],
   cars: ['car', 'cars', 'vehicle', 'vehicles'],
@@ -21,6 +29,14 @@ const categoryAliases = {
 };
 
 const canonicalCategoryMap = {
+  freshFruits: 'Fresh Fruits',
+  freshVegetables: 'Fresh Vegetables',
+  leafyGreens: 'Leafy Greens',
+  rootVegetables: 'Root Vegetables',
+  exoticFruits: 'Exotic Fruits',
+  herbsSeasonings: 'Herbs & Seasonings',
+  saladsSprouts: 'Salads & Sprouts',
+  organicProduce: 'Organic Produce',
   mobiles: 'Mobiles',
   motorcycles: 'Motorcycles',
   cars: 'Cars',

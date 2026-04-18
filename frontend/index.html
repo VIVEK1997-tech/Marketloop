@@ -6,6 +6,17 @@
     <meta name="description" content="MarketLoop is a modern OLX-style marketplace to buy, sell, chat, and discover trusted local deals." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>MarketLoop</title>
+    <script>
+      (function () {
+        const theme = localStorage.getItem('marketloop-theme') || 'system';
+        const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const resolved = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
+        if (resolved === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+        document.documentElement.dataset.theme = resolved;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

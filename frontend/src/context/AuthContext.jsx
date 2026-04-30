@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { api } from '../services/api.js';
+import { api, extractApiData } from '../services/api.js';
+import { cartApi } from '../services/cartApi.js';
 import { disconnectSocket } from '../services/socket.js';
+import { readStoredJson, readStoredValue, writeStoredValue } from '../utils/storage.js';
 
 const AuthContext = createContext(null);
 const PENDING_VERIFICATION_EMAIL_KEY = 'pendingVerificationEmail';
@@ -21,27 +23,38 @@ const normalizeUser = (user) => {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('user');
-    return saved ? normalizeUser(JSON.parse(saved)) : null;
+    return normalizeUser(
+      readStoredJson('user', null, {
+        validate: (value) => value && typeof value === 'object'
+      })
+    );
   });
-  const [token, setToken] = useState(() => localStorage.getItem('token'));
+  const [token, setToken] = useState(() => readStoredValue('token', null));
   const [loading, setLoading] = useState(false);
-  const [pendingVerificationEmail, setPendingVerificationEmail] = useState(() => localStorage.getItem(PENDING_VERIFICATION_EMAIL_KEY) || '');
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState(() => readStoredValue(PENDING_VERIFICATION_EMAIL_KEY, ''));
 
   useEffect(() => {
     const refresh = async () => {
       if (!token) return;
       try {
-        const { data } = await api.get('/auth/me');
+        const response = await api.get('/me');
+        const data = extractApiData(response);
         const refreshedUser = normalizeUser(data.user);
         setUser(refreshedUser);
         localStorage.setItem('user', JSON.stringify(refreshedUser));
+        await cartApi.bootstrapFromServer();
       } catch {
         logout();
       }
     };
     refresh();
   }, [token]);
+
+  useEffect(() => {
+    const handleAuthExpired = () => logout();
+    window.addEventListener('marketloop:auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('marketloop:auth-expired', handleAuthExpired);
+  }, []);
 
   const persistUser = (nextUser) => {
     const normalizedUser = normalizeUser(nextUser);
@@ -61,12 +74,13 @@ export const AuthProvider = ({ children }) => {
     setToken(data.token);
     persistUser(authUser);
     setPendingVerificationEmail('');
+    cartApi.bootstrapFromServer().catch(() => null);
   };
 
   const persistPendingVerificationEmail = (email) => {
     const normalizedEmail = email || '';
     if (normalizedEmail) {
-      localStorage.setItem(PENDING_VERIFICATION_EMAIL_KEY, normalizedEmail);
+      writeStoredValue(PENDING_VERIFICATION_EMAIL_KEY, normalizedEmail);
     } else {
       localStorage.removeItem(PENDING_VERIFICATION_EMAIL_KEY);
     }
@@ -76,7 +90,8 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/login', credentials);
+      const response = await api.post('/auth/login', credentials);
+      const data = extractApiData(response);
       persistAuth(data);
       return data;
     } catch (error) {
@@ -92,7 +107,8 @@ export const AuthProvider = ({ children }) => {
   const register = async (payload) => {
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/register', payload);
+      const response = await api.post('/auth/register', payload);
+      const data = extractApiData(response);
       persistPendingVerificationEmail(data.email || payload.email);
       return data;
     } finally {
@@ -103,7 +119,8 @@ export const AuthProvider = ({ children }) => {
   const verifyOtp = async ({ email, otp }) => {
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/verify-otp', { email, otp });
+      const response = await api.post('/auth/verify-otp', { email, otp });
+      const data = extractApiData(response);
       persistPendingVerificationEmail('');
       return data;
     } finally {
@@ -114,7 +131,8 @@ export const AuthProvider = ({ children }) => {
   const resendOtp = async (email) => {
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/resend-otp', { email });
+      const response = await api.post('/auth/resend-otp', { email });
+      const data = extractApiData(response);
       persistPendingVerificationEmail(data.email || email);
       return data;
     } finally {
@@ -127,6 +145,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('user');
     setToken(null);
     persistUser(null);
+    cartApi.clearLocalOnly();
     disconnectSocket();
   };
 

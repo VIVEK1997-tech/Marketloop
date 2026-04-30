@@ -11,6 +11,7 @@ import {
 } from '../controllers/review.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 const router = express.Router();
 
@@ -22,9 +23,9 @@ const reviewLimiter = rateLimit({
   message: { message: 'Too many review actions. Please try again later.' }
 });
 
-router.get('/product/:id', getProductReviews);
-router.get('/seller/:id', getSellerReviews);
-router.get('/eligibility/:productId', protect, getReviewEligibility);
+router.get('/product/:id', asyncHandler(getProductReviews));
+router.get('/seller/:id', asyncHandler(getSellerReviews));
+router.get('/eligibility/:productId', protect, asyncHandler(getReviewEligibility));
 
 router.post(
   '/',
@@ -37,10 +38,10 @@ router.post(
     body('reviewText').trim().isLength({ min: 3, max: 1000 }).withMessage('Review text must be 3-1000 characters')
   ],
   validate,
-  addReview
+  asyncHandler(addReview)
 );
 
-router.patch('/:id/helpful', protect, [body('helpful').isBoolean().withMessage('helpful must be boolean')], validate, markReviewHelpful);
-router.post('/:id/report', protect, [body('reason').optional().trim().isLength({ max: 300 })], validate, reportReview);
+router.patch('/:id/helpful', protect, [body('helpful').isBoolean().withMessage('helpful must be boolean')], validate, asyncHandler(markReviewHelpful));
+router.post('/:id/report', protect, [body('reason').optional().trim().isLength({ max: 300 })], validate, asyncHandler(reportReview));
 
 export default router;

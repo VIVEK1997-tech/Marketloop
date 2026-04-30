@@ -1,34 +1,32 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import { BellRing, Clock3, Heart, Laptop, LogIn, MapPin, MessageCircle, Moon, Search, Store, Sun, UserPlus } from 'lucide-react';
+import { BellRing, Clock3, Heart, Laptop, LogIn, MapPin, MessageCircle, Moon, Search, ShieldCheck, ShoppingCart, Store, Sun, UserPlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useTheme } from '../context/ThemeContext.jsx';
-import { api } from '../services/api.js';
+import { api, extractApiData } from '../services/api.js';
+import { cartApi } from '../services/cartApi.js';
 import { getProfileImage } from '../utils/avatar.js';
+import { readStoredJson, writeStoredJson } from '../utils/storage.js';
 import Chatbot from './Chatbot.jsx';
 
 const RECENT_SEARCHES_KEY = 'marketloop_recent_searches';
 
 const getRecentSearches = () => {
-  try {
-    const saved = localStorage.getItem(RECENT_SEARCHES_KEY);
-    return saved ? JSON.parse(saved) : [];
-  } catch {
-    return [];
-  }
+  return readStoredJson(RECENT_SEARCHES_KEY, []);
 };
 
 const saveRecentSearch = (query) => {
   if (!query) return;
   const next = [query, ...getRecentSearches().filter((item) => item.toLowerCase() !== query.toLowerCase())].slice(0, 6);
-  localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next));
+  writeStoredJson(RECENT_SEARCHES_KEY, next);
   return next;
 };
 
 const highlightMatch = (text, query) => {
-  if (!query.trim()) return text;
+  const safeText = typeof text === 'string' ? text : String(text || '');
+  if (!query.trim()) return safeText;
   const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const parts = text.split(new RegExp(`(${escaped})`, 'ig'));
+  const parts = safeText.split(new RegExp(`(${escaped})`, 'ig'));
   return parts.map((part, index) =>
     part.toLowerCase() === query.toLowerCase() ? (
       <mark key={`${part}-${index}`} className="rounded bg-cyan-100 px-0.5 text-brand-700 dark:bg-cyan-900 dark:text-cyan-200">
@@ -60,9 +58,30 @@ export default function Layout() {
   const [recentSearches, setRecentSearches] = useState([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [wishlistCount, setWishlistCount] = useState(0);
+  const [cartCount, setCartCount] = useState(() => cartApi.getItems().reduce((sum, item) => sum + item.quantity, 0));
   const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
   const userRoles = user?.roles || (user?.role ? [user.role] : []);
+  const isAdmin = userRoles.includes('admin');
   const isSeller = userRoles.includes('seller') || userRoles.includes('admin');
+
+  const handleSellClick = () => {
+    if (!user) {
+      navigate('/login?role=seller');
+      return;
+    }
+
+    if (userRoles.includes('seller')) {
+      navigate('/dashboard?tab=listings&intent=sell');
+      return;
+    }
+
+    navigate('/dashboard?tab=settings&intent=sell', {
+      state: {
+        sellIntent: true,
+        sellMessage: 'You need seller access before you can start listing products on MarketLoop.'
+      }
+    });
+  };
 
   const trimmedSearch = headerSearch.trim();
   const showingRecent = !trimmedSearch;
@@ -83,14 +102,25 @@ export default function Layout() {
     }
 
     api
-      .get('/users/wishlist')
-      .then(({ data }) => setWishlistCount(data.wishlist.length))
+      .get('/wishlist')
+      .then((response) => setWishlistCount((extractApiData(response).wishlist || []).length))
       .catch(() => setWishlistCount(0));
   }, [user, location.pathname]);
 
   useEffect(() => {
     setActiveIndex(-1);
   }, [headerSearch, showSuggestions]);
+
+  useEffect(() => {
+    const syncCartCount = (items = cartApi.getItems()) => {
+      setCartCount(items.reduce((sum, item) => sum + item.quantity, 0));
+    };
+
+    const handleCartUpdated = (event) => syncCartCount(event.detail);
+    syncCartCount();
+    window.addEventListener('marketloop:cart-updated', handleCartUpdated);
+    return () => window.removeEventListener('marketloop:cart-updated', handleCartUpdated);
+  }, []);
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
@@ -118,10 +148,10 @@ export default function Layout() {
 
     const fetchTimer = setTimeout(async () => {
       try {
-        const { data } = await api.get('/products', {
+        const response = await api.get('/products', {
           params: { keyword: query, sort: 'latest' }
         });
-        setSuggestions(data.products.slice(0, 6));
+        setSuggestions((extractApiData(response).products || []).slice(0, 6));
         setShowSuggestions(true);
       } catch {
         setSuggestions([]);
@@ -285,16 +315,16 @@ export default function Layout() {
                         >
                           <div>
                             <p className="font-semibold text-slate-900 dark:text-slate-100">
-                              {highlightMatch(item.product.title, trimmedSearch)}
+                              {highlightMatch(item.product?.title, trimmedSearch)}
                             </p>
                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              {highlightMatch(item.product.category, trimmedSearch)}
+                              {highlightMatch(item.product?.category, trimmedSearch)}
                             </p>
                           </div>
                           <div className="shrink-0 text-right">
-                            <p className="font-bold text-brand-700">Rs. {Number(item.product.price).toLocaleString('en-IN')}</p>
+                            <p className="font-bold text-brand-700">Rs. {Number(item.product?.price || 0).toLocaleString('en-IN')}</p>
                             <p className="mt-1 inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-                              <MapPin size={12} /> {highlightMatch(item.product.location, trimmedSearch)}
+                              <MapPin size={12} /> {highlightMatch(item.product?.location, trimmedSearch)}
                             </p>
                           </div>
                         </button>
@@ -362,11 +392,29 @@ export default function Layout() {
               )}
             </Link>
 
+            <Link
+              className="relative inline-flex items-center gap-1 rounded-xl px-2 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 sm:gap-1.5 sm:px-2.5 sm:text-sm"
+              to={user ? '/cart' : '/login'}
+              aria-label="Open cart"
+            >
+              <ShoppingCart size={16} className="text-slate-700 dark:text-slate-200" />
+              <span className="hidden sm:inline">Cart</span>
+              {cartCount > 0 && (
+                <span className="absolute left-4 top-0.5 inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
+                  {cartCount}
+                </span>
+              )}
+            </Link>
+
             {!user && (
               <>
                 <Link className="inline-flex items-center gap-1 rounded-xl px-2 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 sm:gap-1.5 sm:px-2.5 sm:text-sm" to="/login">
                   <LogIn size={16} />
                   <span className="hidden sm:inline">Login</span>
+                </Link>
+                <Link className="inline-flex items-center gap-1 rounded-xl px-2 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 sm:gap-1.5 sm:px-2.5 sm:text-sm" to="/admin-login">
+                  <ShieldCheck size={16} />
+                  <span className="hidden sm:inline">Admin</span>
                 </Link>
                 <Link className="inline-flex items-center gap-1 rounded-xl border border-brand-200 bg-brand-50 px-2 py-2 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 dark:border-slate-700 dark:bg-slate-900 dark:text-cyan-300 dark:hover:bg-slate-800 sm:gap-1.5 sm:px-2.5 sm:text-sm" to="/register">
                   <UserPlus size={16} />
@@ -377,10 +425,18 @@ export default function Layout() {
 
             {user && (
               <>
-                {isSeller && (
-                  <Link className="inline-flex items-center gap-1 rounded-xl border border-brand-200 bg-brand-50 px-2 py-2 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 dark:border-slate-700 dark:bg-slate-900 dark:text-cyan-300 dark:hover:bg-slate-800 sm:gap-1.5 sm:px-2.5 sm:text-sm" to="/products/new">
-                    <Store size={16} />
-                    <span className="hidden sm:inline">Sell</span>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-xl border border-brand-200 bg-brand-50 px-2 py-2 text-xs font-semibold text-brand-700 transition hover:bg-brand-100 dark:border-slate-700 dark:bg-slate-900 dark:text-cyan-300 dark:hover:bg-slate-800 sm:gap-1.5 sm:px-2.5 sm:text-sm"
+                  onClick={handleSellClick}
+                >
+                  <Store size={16} />
+                  <span className="hidden sm:inline">Sell</span>
+                </button>
+                {isAdmin && (
+                  <Link className="inline-flex items-center gap-1 rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:border-slate-700 dark:bg-slate-900 dark:text-emerald-300 dark:hover:bg-slate-800 sm:gap-1.5 sm:px-2.5 sm:text-sm" to="/admin">
+                    <ShieldCheck size={16} />
+                    <span className="hidden sm:inline">Admin Panel</span>
                   </Link>
                 )}
                 <Link className="inline-flex items-center gap-1 rounded-xl px-2 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 sm:gap-1.5 sm:px-2.5 sm:text-sm" to="/dashboard">
@@ -399,13 +455,6 @@ export default function Layout() {
                   <span className="hidden sm:inline">Logout</span>
                 </button>
               </>
-            )}
-
-            {!user && (
-              <Link className="inline-flex items-center gap-1 rounded-xl px-2 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 sm:gap-1.5 sm:px-2.5 sm:text-sm" to="/register">
-                <Store size={16} />
-                <span className="hidden sm:inline">Sell</span>
-              </Link>
             )}
           </div>
         </nav>

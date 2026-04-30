@@ -31,8 +31,9 @@ export const registerChatbotSocket = (io, socket) => {
       }
 
       const text = payload?.text || '';
+      const sessionContext = payload?.context || {};
       socket.emit('chatbot:typing', { isTyping: true });
-      const { userMessage, botMessage } = await handleChatbotMessage({ user: socket.user, text });
+      const { userMessage, botMessage } = await handleChatbotMessage({ user: socket.user, text, sessionContext });
       socket.emit('chatbot:receive_message', { message: userMessage });
       socket.emit('chatbot:receive_message', { message: botMessage });
       callback?.({ ok: true });

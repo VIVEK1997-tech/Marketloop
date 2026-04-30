@@ -15,6 +15,36 @@ const locationSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const pushTokenSchema = new mongoose.Schema(
+  {
+    token: { type: String, required: true, trim: true },
+    platform: { type: String, enum: ['android', 'ios', 'web'], default: 'android' },
+    deviceName: { type: String, trim: true, default: '' },
+    updatedAt: { type: Date, default: Date.now }
+  },
+  { _id: false }
+);
+
+const appNotificationSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true, trim: true },
+    message: { type: String, trim: true, default: '' },
+    type: { type: String, enum: ['info', 'success', 'warning', 'danger'], default: 'info' },
+    module: { type: String, trim: true, default: '' },
+    linkedRecordId: { type: String, trim: true, default: '' },
+    read: { type: Boolean, default: false }
+  },
+  { timestamps: true }
+);
+
+const cartItemSchema = new mongoose.Schema(
+  {
+    product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+    quantity: { type: Number, default: 1, min: 1 }
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
@@ -34,9 +64,18 @@ const userSchema = new mongoose.Schema(
     profileImage: String,
     location: locationSchema,
     wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
+    cart: { type: [cartItemSchema], default: [] },
+    pushTokens: { type: [pushTokenSchema], default: [] },
+    appNotifications: { type: [appNotificationSchema], default: [] },
     averageRating: { type: Number, default: 0, min: 0, max: 5 },
     totalReviews: { type: Number, default: 0, min: 0 },
     isVerified: { type: Boolean, default: false, index: true },
+    accountStatus: {
+      type: String,
+      enum: ['active', 'deactivated', 'kyc_pending', 'inactive'],
+      default: 'active',
+      index: true
+    },
     otp: { type: String, select: false },
     otpExpiry: { type: Date, select: false },
     isBanned: { type: Boolean, default: false },
@@ -66,6 +105,10 @@ userSchema.pre('validate', function syncRoles(next) {
   }
 
   this.role = this.activeRole;
+
+  if (!this.accountStatus) {
+    this.accountStatus = 'active';
+  }
   next();
 });
 

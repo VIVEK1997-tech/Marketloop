@@ -17,16 +17,17 @@ import ReviewForm from '../components/ReviewForm.jsx';
 import ReviewList from '../components/ReviewList.jsx';
 import StarRating from '../components/StarRating.jsx';
 import { api, getErrorMessage } from '../services/api.js';
-import { loadRazorpayCheckout } from '../services/razorpay.js';
+import { launchGatewayCheckout } from '../services/paymentGatewayCheckout.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { getProfileImage } from '../utils/avatar.js';
+import { groceryCategoryMap } from '../utils/groceryData.js';
+import { formatNormalizedPrice, formatPriceUnit } from '../utils/uom.js';
 
 const fallbackImage = 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1200&q=80';
 
-const paymentMethods = [
-  { id: 'upi', label: 'UPI', description: 'Pay instantly using any UPI app', icon: Wallet },
-  { id: 'card', label: 'Credit / Debit Card', description: 'Secure card payment', icon: CreditCard },
-  { id: 'netbanking', label: 'Net banking', description: 'Pay securely from your bank', icon: PackageCheck }
+const fallbackGatewayCards = [
+  { id: 'razorpay_checkout', company: 'Razorpay', type: 'checkout', description: 'Cards, UPI, wallets, and net banking', icon: CreditCard },
+  { id: 'payu_india', company: 'PayU India', type: 'checkout', description: 'Bank redirect and alternative checkout route', icon: Wallet }
 ];
 
 const formatCurrency = (value) => `Rs. ${Number(value || 0).toLocaleString('en-IN')}`;
@@ -52,6 +53,8 @@ export default function ProductDetails() {
   const [wishlistStatus, setWishlistStatus] = useState('');
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [availableGateways, setAvailableGateways] = useState([]);
+  const [selectedGatewayId, setSelectedGatewayId] = useState('');
   const [paymentMessage, setPaymentMessage] = useState('');
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
@@ -79,6 +82,7 @@ export default function ProductDetails() {
       setReviewMessage('');
       setWishlistStatus('');
       setPaymentOpen(false);
+      setSelectedGatewayId('');
       setPaymentMessage('');
       setIsLoadingPayment(false);
       setIsProcessingPayment(false);
@@ -198,11 +202,38 @@ export default function ProductDetails() {
       .catch(() => setIsWishlisted(false));
   }, [id, user]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    api.get('/payment/gateways')
+      .then(({ data }) => {
+        if (cancelled) return;
+        const gateways = Array.isArray(data?.gateways) && data.gateways.length ? data.gateways : fallbackGatewayCards;
+        setAvailableGateways(gateways);
+        setSelectedGatewayId((current) => {
+          if (current && gateways.some((gateway) => gateway.id === current)) return current;
+          return data?.defaultGateway || gateways[0]?.id || '';
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAvailableGateways(fallbackGatewayCards);
+        setSelectedGatewayId((current) => current || fallbackGatewayCards[0].id);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const galleryImages = useMemo(() => {
     if (!product) return [fallbackImage];
     const uniqueImages = Array.from(new Set(product.images || []));
-    return uniqueImages.length ? uniqueImages : [fallbackImage];
+    const categoryImage = groceryCategoryMap[product.category]?.image;
+    return uniqueImages.length ? uniqueImages : [categoryImage || fallbackImage];
   }, [product]);
+
+  const detailFallbackImage = groceryCategoryMap[product?.category]?.image || fallbackImage;
 
   const overviewItems = useMemo(() => {
     if (!product) return [];
@@ -211,6 +242,8 @@ export default function ProductDetails() {
       { label: 'Location', value: product.location || 'Location not shared yet' },
       { label: 'Posted on', value: formatDate(product.createdAt) },
       { label: 'Status', value: product.status === 'sold' ? 'Sold' : 'Available' },
+      { label: 'Unit', value: product.unit || 'Kg' },
+      { label: 'Quantity', value: product.quantity ? `${product.quantity} ${product.unit || 'Kg'}` : 'Ask seller' },
       { label: 'Views', value: `${product.views || 0} views` },
       { label: 'Interest', value: `${product.interestCount || 0} saves` }
     ];
@@ -291,12 +324,20 @@ export default function ProductDetails() {
     }
   };
 
-  const proceedPayment = async () => {
+  const selectedGateway = availableGateways.find((gateway) => gateway.id === selectedGatewayId) || availableGateways[0] || fallbackGatewayCards[0];
+
+  const proceedWithGateway = async () => {
     if (!user) {
-      navigate('/login');
+      navigate('/login?role=buyer');
       return;
     }
     if (!product?._id) return;
+    if (!selectedGateway?.id) {
+      setIsPaymentSuccess(false);
+      setIsPaymentFailed(true);
+      setPaymentMessage('No payment gateway is available right now. Please try again shortly.');
+      return;
+    }
 
     setIsLoadingPayment(true);
     setIsProcessingPayment(false);
@@ -306,69 +347,43 @@ export default function ProductDetails() {
     setPaymentReceipt(null);
 
     try {
-      await loadRazorpayCheckout();
-      const { data } = await api.post('/payment/create-order', { productId: product._id });
-
-      if (!window.Razorpay) {
-        throw new Error('Razorpay checkout could not be loaded. Please refresh and try again.');
-      }
-
-      if (!data?.checkout?.key || !data?.checkout?.order_id) {
-        throw new Error('Payment order was created incorrectly. Please try again.');
-      }
+      const { data } = await api.post('/payment/orders', {
+        productId: product._id,
+        gatewayId: selectedGateway.id
+      });
 
       setIsLoadingPayment(false);
       setIsProcessingPayment(true);
       setPaymentOpen(false);
-      setPaymentMessage('Processing payment...');
+      setPaymentMessage(`Processing ${selectedGateway.company} checkout...`);
 
-      const options = {
-        ...data.checkout,
-        image: '/favicon.svg',
-        theme: { color: '#0891b2' },
-        handler: async (response) => {
-          try {
-            const verification = await api.post('/payment/verify-payment', response);
-            setIsProcessingPayment(false);
-            setIsPaymentSuccess(true);
-            setIsPaymentFailed(false);
-            setPaymentMessage('Payment successful. Order confirmed.');
-            setPaymentReceipt(verification.data.receipt);
-            setProduct((current) => (current ? { ...current, status: 'sold' } : current));
-          } catch (err) {
-            setIsProcessingPayment(false);
-            setIsPaymentSuccess(false);
-            setIsPaymentFailed(true);
-            setPaymentMessage(getErrorMessage(err) || 'Payment failed or cancelled');
-          } finally {
-            setIsLoadingPayment(false);
-          }
+      await launchGatewayCheckout({
+        gateway: selectedGateway,
+        orderResponse: data,
+        verifyPayment: ({ gatewayId, orderId, payload }) => api.post('/payment/verify', { gatewayId, orderId, payload }),
+        recordFailure: ({ orderId, gatewayId, error }) => api.post('/payment/failed', { orderId, gatewayId, error }).catch(() => {}),
+        onProcessing: (message) => {
+          setIsLoadingPayment(false);
+          setIsProcessingPayment(true);
+          setPaymentMessage(message);
         },
-        modal: {
-          ondismiss: () => {
-            setIsLoadingPayment(false);
-            setIsProcessingPayment(false);
-            setIsPaymentSuccess(false);
-            setIsPaymentFailed(true);
-            setPaymentMessage('Payment failed or cancelled');
-          }
+        onSuccess: (receipt) => {
+          setIsLoadingPayment(false);
+          setIsProcessingPayment(false);
+          setIsPaymentSuccess(true);
+          setIsPaymentFailed(false);
+          setPaymentMessage('Payment successful. Order confirmed.');
+          setPaymentReceipt(receipt);
+          setProduct((current) => (current ? { ...current, status: 'sold' } : current));
+        },
+        onError: (error) => {
+          setIsLoadingPayment(false);
+          setIsProcessingPayment(false);
+          setIsPaymentSuccess(false);
+          setIsPaymentFailed(true);
+          setPaymentMessage(getErrorMessage(error) || 'Payment failed or cancelled');
         }
-      };
-
-      const razorpay = new window.Razorpay(options);
-      razorpay.on('payment.failed', async (response) => {
-        await api.post('/payment/failed', {
-          razorpayOrderId: data.order?.razorpayOrderId,
-          error: response.error
-        }).catch(() => {});
-
-        setIsLoadingPayment(false);
-        setIsProcessingPayment(false);
-        setIsPaymentSuccess(false);
-        setIsPaymentFailed(true);
-        setPaymentMessage(response.error?.description || 'Payment failed or cancelled');
       });
-      razorpay.open();
     } catch (err) {
       setIsLoadingPayment(false);
       setIsProcessingPayment(false);
@@ -380,6 +395,14 @@ export default function ProductDetails() {
 
   if (error) return <p className="card text-red-700 dark:text-red-300">{error}</p>;
   if (!product) return <p className="card">Loading product...</p>;
+
+  const activePaymentChoice = {
+    primaryAction: proceedWithGateway,
+    primaryLabel: isLoadingPayment || isProcessingPayment ? 'Processing payment...' : `Continue with ${selectedGateway?.company || 'gateway'}`,
+    helperText: selectedGateway
+      ? `${selectedGateway.company} (${selectedGateway.type}) is currently selected for this checkout.`
+      : 'Choose an enabled payment gateway to continue.'
+  };
 
   return (
     <div className="space-y-6">
@@ -405,7 +428,14 @@ export default function ProductDetails() {
           <div className="grid gap-6 px-6 py-6 md:grid-cols-[minmax(0,1fr)_340px]">
             <div className="space-y-4">
               <div className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950">
-                <img className="h-[22rem] w-full object-cover md:h-[28rem]" src={activeImage || galleryImages[0]} alt={product.title} />
+                <img
+                  className="h-[22rem] w-full object-cover md:h-[28rem]"
+                  src={activeImage || galleryImages[0] || detailFallbackImage}
+                  alt={product.title}
+                  onError={(event) => {
+                    event.currentTarget.src = detailFallbackImage;
+                  }}
+                />
               </div>
 
               {galleryImages.length > 1 && (
@@ -417,7 +447,14 @@ export default function ProductDetails() {
                       onClick={() => setActiveImage(image)}
                       className={`overflow-hidden rounded-2xl border ${activeImage === image ? 'border-brand-500 ring-2 ring-brand-200' : 'border-slate-200 dark:border-slate-800'}`}
                     >
-                      <img src={image} alt={product.title} className="h-24 w-full object-cover" />
+                      <img
+                        src={image}
+                        alt={product.title}
+                        className="h-24 w-full object-cover"
+                        onError={(event) => {
+                          event.currentTarget.src = detailFallbackImage;
+                        }}
+                      />
                     </button>
                   ))}
                 </div>
@@ -426,7 +463,13 @@ export default function ProductDetails() {
 
             <aside className="space-y-4 md:sticky md:top-24 md:self-start">
               <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
-                <p className="text-4xl font-black text-slate-900 dark:text-slate-100">{formatCurrency(product.price)}</p>
+                <p className="text-4xl font-black text-slate-900 dark:text-slate-100">{formatPriceUnit(product)}</p>
+                {product.unit && product.unit !== 'Kg' && (
+                  <p className="mt-2 text-sm font-bold text-emerald-700 dark:text-emerald-300">{formatNormalizedPrice(product)}</p>
+                )}
+                {product.conversionMeta?.note && (
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{product.conversionMeta.note}</p>
+                )}
                 <div className="mt-3 flex items-center gap-2">
                   <StarRating value={productReviews.averageRating || product.averageRating} readOnly size={18} />
                   <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -447,7 +490,7 @@ export default function ProductDetails() {
 
                 {canContactSeller ? (
                   <div className="mt-6 grid gap-3">
-                    <button className="btn w-full" onClick={() => setPaymentOpen(true)} disabled={product.status === 'sold'}>
+              <button className="btn w-full" onClick={() => setPaymentOpen(true)} disabled={product.status === 'sold'}>
                       <IndianRupee size={18} /> Buy now / Pay
                     </button>
                     <button className="btn-secondary w-full border-brand-600 text-brand-700 hover:bg-brand-50 dark:hover:bg-slate-800" onClick={() => setPaymentOpen(true)}>
@@ -518,7 +561,7 @@ export default function ProductDetails() {
                   </div>
                 </div>
                 {sellerId ? (
-                  <button className="btn-secondary mt-5 w-full" onClick={startChat} disabled={!canContactSeller}>
+              <button className="btn-secondary mt-5 w-full" onClick={startChat} disabled={!canContactSeller}>
                     {canContactSeller ? 'Chat with seller' : isOwner ? 'Your listing' : 'Login to chat'}
                   </button>
                 ) : (
@@ -695,26 +738,46 @@ export default function ProductDetails() {
               <div>
                 <p className="section-subtitle">Secure checkout</p>
                 <h2 className="mt-2 text-3xl font-black text-slate-900 dark:text-slate-100">Pay for {product.title}</h2>
-                <p className="mt-2 text-slate-500 dark:text-slate-400">Choose a payment method to continue your purchase request.</p>
+                <p className="mt-2 text-slate-500 dark:text-slate-400">Choose one of the enabled MarketLoop gateways to continue your purchase request.</p>
               </div>
               <button className="btn-secondary px-3 py-2" onClick={() => setPaymentOpen(false)}>Close</button>
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-3">
-              {paymentMethods.map((method) => {
-                const Icon = method.icon;
+              {availableGateways.map((gateway) => {
+                const Icon = gateway.id.includes('upi') ? Wallet : gateway.id.includes('paypal') || gateway.id.includes('stripe') ? CreditCard : PackageCheck;
+                const selected = selectedGatewayId === gateway.id;
                 return (
                   <button
-                    key={method.id}
+                    key={gateway.id}
                     type="button"
-                    className="rounded-2xl border border-slate-200 p-4 text-left transition hover:border-brand-300 hover:bg-brand-50 dark:border-slate-800 dark:hover:bg-slate-800"
+                    onClick={() => setSelectedGatewayId(gateway.id)}
+                    className={`rounded-2xl border p-4 text-left transition ${
+                      selected
+                        ? 'border-brand-500 bg-brand-50 shadow-md shadow-brand-100 dark:border-cyan-400 dark:bg-slate-800 dark:shadow-none'
+                        : 'border-slate-200 hover:border-brand-300 hover:bg-brand-50 dark:border-slate-800 dark:hover:bg-slate-800'
+                    }`}
+                    aria-pressed={selected}
                   >
-                    <Icon className="text-brand-700" />
-                    <p className="mt-3 font-black text-slate-900 dark:text-slate-100">{method.label}</p>
-                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{method.description}</p>
+                    <div className="flex items-start justify-between gap-3">
+                      <Icon className={selected ? 'text-brand-700 dark:text-cyan-300' : 'text-brand-700'} />
+                      {selected && (
+                        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-brand-700 shadow-sm dark:bg-slate-900 dark:text-cyan-300">
+                          Selected
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-3 font-black text-slate-900 dark:text-slate-100">{gateway.company}</p>
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">{gateway.id}</p>
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{gateway.type} gateway enabled for this checkout mode.</p>
                   </button>
                 );
               })}
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-brand-100 bg-brand-50/70 px-4 py-3 text-sm text-brand-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              <p className="font-semibold">Selected payment option: {selectedGateway?.company || 'No gateway selected'}</p>
+              <p className="mt-1 text-xs text-brand-700 dark:text-slate-300">{activePaymentChoice.helperText}</p>
             </div>
 
             <div className="mt-6 rounded-2xl bg-slate-50 p-5 dark:bg-slate-800">
@@ -753,8 +816,8 @@ export default function ProductDetails() {
             )}
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <button className="btn" onClick={proceedPayment} disabled={isLoadingPayment || isProcessingPayment}>
-                {isLoadingPayment || isProcessingPayment ? 'Processing payment...' : 'Open Razorpay checkout'}
+              <button className="btn" onClick={activePaymentChoice.primaryAction} disabled={isLoadingPayment || isProcessingPayment}>
+                {activePaymentChoice.primaryLabel}
               </button>
               <button className="btn-secondary" onClick={startChat}>Ask seller first</button>
             </div>

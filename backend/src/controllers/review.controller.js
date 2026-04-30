@@ -2,6 +2,7 @@ import Conversation from '../models/Conversation.js';
 import Product from '../models/Product.js';
 import Review from '../models/Review.js';
 import User from '../models/User.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 
 const sanitizeReviewText = (value = '') => value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 1000);
 
@@ -63,7 +64,7 @@ export const getReviewEligibility = async (req, res) => {
   const existingProductReview = await Review.findOne({ reviewer: req.user._id, product: product._id, reviewType: 'product' });
   const existingSellerReview = await Review.findOne({ reviewer: req.user._id, product: product._id, reviewType: 'seller' });
 
-  res.json({
+  return sendSuccess(res, {
     eligible: hasInteraction,
     isOwner,
     alreadyReviewed: {
@@ -117,7 +118,7 @@ export const addReview = async (req, res) => {
   }
 
   await review.populate('reviewer', 'name profileImage');
-  res.status(201).json({ review, message: 'Review submitted successfully' });
+  return sendSuccess(res, { review }, { statusCode: 201, message: 'Review submitted successfully' });
 };
 
 export const getProductReviews = async (req, res) => {
@@ -125,7 +126,7 @@ export const getProductReviews = async (req, res) => {
     .populate('reviewer', 'name profileImage')
     .sort(sortReviews(req.query.sort));
 
-  res.json({
+  return sendSuccess(res, {
     reviews,
     averageRating: calculateAverage(reviews),
     totalReviews: reviews.length,
@@ -139,7 +140,7 @@ export const getSellerReviews = async (req, res) => {
     .populate('product', 'title')
     .sort(sortReviews(req.query.sort));
 
-  res.json({
+  return sendSuccess(res, {
     reviews,
     averageRating: calculateAverage(reviews),
     totalReviews: reviews.length,
@@ -155,7 +156,7 @@ export const markReviewHelpful = async (req, res) => {
 
   const review = await Review.findByIdAndUpdate(req.params.id, update, { new: true });
   if (!review) return res.status(404).json({ message: 'Review not found' });
-  res.json({ review });
+  return sendSuccess(res, { review }, { message: 'Review feedback saved' });
 };
 
 export const reportReview = async (req, res) => {
@@ -167,5 +168,5 @@ export const reportReview = async (req, res) => {
   );
 
   if (!review) return res.status(404).json({ message: 'Review not found' });
-  res.json({ message: 'Review reported successfully' });
+  return sendSuccess(res, {}, { message: 'Review reported successfully' });
 };

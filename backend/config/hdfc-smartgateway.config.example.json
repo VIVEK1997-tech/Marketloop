@@ -1,0 +1,8 @@
+{
+  "API_KEY": "replace_with_hdfc_api_key",
+  "MERCHANT_ID": "replace_with_hdfc_merchant_id",
+  "ENABLE_LOGGING": false,
+  "PAYMENT_PAGE_CLIENT_ID": "hdfcmaster",
+  "BASE_URL": "https://smartgateway.hdfcuat.bank.in",
+  "RESPONSE_KEY": "replace_with_hdfc_response_key"
+}

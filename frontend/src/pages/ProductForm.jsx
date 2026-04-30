@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, getErrorMessage } from '../services/api.js';
+import { api, extractApiData, getErrorMessage } from '../services/api.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { groceryCategories } from '../utils/groceryData.js';
+import { UOM, UOM_OPTIONS, getUnitHelper } from '../utils/uom.js';
 
-const initialState = { title: '', description: '', price: '', category: '', location: '', images: '' };
+const initialState = { title: '', description: '', price: '', unit: UOM.KG, quantity: '', crateWeightKg: '', truckWeightKg: '', category: '', location: '', images: '' };
 
 export default function ProductForm() {
   const { id } = useParams();
@@ -17,12 +18,17 @@ export default function ProductForm() {
 
   useEffect(() => {
     if (!id) return;
-    api.get(`/products/${id}`).then(({ data }) => {
+    api.get(`/products/${id}`).then((response) => {
+      const data = extractApiData(response);
       const product = data.product;
       setForm({
         title: product.title,
         description: product.description,
         price: product.price,
+        unit: product.unit || UOM.KG,
+        quantity: product.quantity || '',
+        crateWeightKg: product.crateWeightKg || '',
+        truckWeightKg: product.truckWeightKg || '',
         category: product.category,
         location: product.location,
         images: product.images?.join(', ') || ''
@@ -46,6 +52,10 @@ export default function ProductForm() {
       payload.append('title', form.title);
       payload.append('description', form.description);
       payload.append('price', form.price);
+      payload.append('unit', form.unit || UOM.KG);
+      if (form.quantity) payload.append('quantity', form.quantity);
+      if (form.crateWeightKg) payload.append('crateWeightKg', form.crateWeightKg);
+      if (form.truckWeightKg) payload.append('truckWeightKg', form.truckWeightKg);
       payload.append('category', form.category);
       payload.append('location', form.location);
       form.images
@@ -56,7 +66,8 @@ export default function ProductForm() {
       files.forEach((file) => payload.append('images', file));
 
       const config = { headers: { 'Content-Type': 'multipart/form-data' } };
-      const { data } = id ? await api.put(`/products/${id}`, payload, config) : await api.post('/products', payload, config);
+      const response = id ? await api.put(`/products/${id}`, payload, config) : await api.post('/products', payload, config);
+      const data = extractApiData(response);
       navigate(`/products/${data.product._id}`);
     } catch (err) {
       setError(getErrorMessage(err));
@@ -85,6 +96,27 @@ export default function ProductForm() {
       <textarea className="input min-h-40" name="description" placeholder="Describe freshness, quantity, sourcing, and delivery details" value={form.description} onChange={update} />
       <div className="grid gap-4 md:grid-cols-3">
         <input className="input" name="price" type="number" placeholder="Price in Rs." value={form.price} onChange={update} />
+        <select className="input" name="unit" value={form.unit} onChange={update}>
+          {UOM_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              Rs. / {option.label}
+            </option>
+          ))}
+        </select>
+        <input className="input" name="quantity" type="number" min="0" placeholder="Quantity (optional)" value={form.quantity} onChange={update} />
+      </div>
+      <p className="text-sm text-slate-500">{getUnitHelper(form.unit)}. Buyers will also see the Rs./Kg equivalent for comparison.</p>
+      {(form.unit === UOM.CRATE || form.unit === UOM.TRUCK) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {form.unit === UOM.CRATE && (
+            <input className="input" name="crateWeightKg" type="number" min="0" placeholder="Crate weight in Kg (optional)" value={form.crateWeightKg} onChange={update} />
+          )}
+          {form.unit === UOM.TRUCK && (
+            <input className="input" name="truckWeightKg" type="number" min="8000" max="20000" placeholder="Truck weight Kg, e.g. 12000" value={form.truckWeightKg} onChange={update} />
+          )}
+        </div>
+      )}
+      <div className="grid gap-4 md:grid-cols-2">
         <select className="input" name="category" value={form.category} onChange={update}>
           <option value="">Select category</option>
           {form.category && !groceryCategories.some((category) => category.value === form.category) && (

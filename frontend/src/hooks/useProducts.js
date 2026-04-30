@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, getErrorMessage } from '../services/api.js';
+import { api, extractApiData, getErrorMessage } from '../services/api.js';
 
 export const useProducts = (filters) => {
   const [products, setProducts] = useState([]);
@@ -16,9 +16,10 @@ export const useProducts = (filters) => {
         );
         const maxPrice = params.maxPrice === undefined ? undefined : Number(params.maxPrice);
         const minPrice = params.minPrice === undefined ? undefined : Number(params.minPrice);
-        const { data } = await api.get('/products', { params });
+        const response = await api.get('/products', { params });
+        const data = extractApiData(response);
 
-        const filteredProducts = data.products.filter((product) => {
+        const filteredProducts = (data.products || []).filter((product) => {
           const price = Number(product.price);
           if (Number.isFinite(minPrice) && price < minPrice) return false;
           if (Number.isFinite(maxPrice) && price > maxPrice) return false;

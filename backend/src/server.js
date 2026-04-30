@@ -1,10 +1,18 @@
 import http from 'http';
 import dotenv from 'dotenv';
-import app from './app.js';
-import connectDB from './config/db.js';
-import { configureSocket } from './socket/index.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+const [{ default: app }, { default: connectDB }, { configureSocket }] = await Promise.all([
+  import('./app.js'),
+  import('./config/db.js'),
+  import('./socket/index.js')
+]);
 
 const PORT = Number(process.env.PORT || 5000);
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../services/api.js';
+import { api, extractApiData, getErrorMessage } from '../services/api.js';
 
 const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
 const formatDate = (value) => new Date(value).toLocaleString('en-IN');
@@ -15,10 +15,12 @@ const statusClass = {
 export default function PaymentHistory() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    api.get('/payment/orders')
-      .then(({ data }) => setOrders(data.orders || []))
+    api.get('/orders')
+      .then((response) => setOrders(extractApiData(response).orders || []))
+      .catch((err) => setError(getErrorMessage(err)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -29,8 +31,11 @@ export default function PaymentHistory() {
       <div className="card">
         <p className="section-subtitle">Payments</p>
         <h1 className="section-title mt-2">Your MarketLoop orders</h1>
-        <p className="mt-2 text-sm text-slate-500">Track Razorpay payment status, receipts, and purchased products.</p>
+        <p className="mt-2 text-sm text-slate-500">Track payment status, receipts, and purchased products in one place.</p>
+        <Link className="btn-secondary mt-4 inline-flex py-2" to="/invoices">Open all invoices</Link>
       </div>
+
+      {error && <p className="card text-red-700">{error}</p>}
 
       <div className="grid gap-4">
         {orders.map((order) => (
@@ -48,6 +53,11 @@ export default function PaymentHistory() {
                 <p className="mt-1 text-sm text-slate-500">Seller: {order.seller?.name || 'Marketplace seller'}</p>
                 <p className="mt-1 text-sm text-slate-500">Receipt: {order.receipt}</p>
                 <p className="mt-1 text-sm text-slate-500">{formatDate(order.createdAt)}</p>
+                {order.invoice && (
+                  <Link className="mt-2 inline-flex text-sm font-semibold text-brand-700 hover:underline" to={order.invoice.detailPath}>
+                    Invoice: {order.invoice.invoiceNumber}
+                  </Link>
+                )}
               </div>
             </div>
             <div className="text-right">

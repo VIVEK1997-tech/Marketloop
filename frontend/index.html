@@ -8,13 +8,18 @@
     <title>MarketLoop</title>
     <script>
       (function () {
-        const theme = localStorage.getItem('marketloop-theme') || 'system';
-        const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const resolved = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
-        if (resolved === 'dark') {
-          document.documentElement.classList.add('dark');
+        try {
+          const theme = localStorage.getItem('marketloop-theme') || 'system';
+          const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          const resolved = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
+          if (resolved === 'dark') {
+            document.documentElement.classList.add('dark');
+          }
+          document.documentElement.dataset.theme = resolved;
+        } catch (error) {
+          console.error('MarketLoop theme bootstrap error:', error?.message || error);
+          document.documentElement.dataset.theme = 'light';
         }
-        document.documentElement.dataset.theme = resolved;
       })();
     </script>
   </head>

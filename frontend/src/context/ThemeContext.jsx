@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { readStoredValue, writeStoredValue } from '../utils/storage.js';
 
 const ThemeContext = createContext(null);
 const STORAGE_KEY = 'marketloop-theme';
@@ -8,7 +9,7 @@ const getSystemPreference = () =>
 
 const getStoredTheme = () => {
   if (typeof window === 'undefined') return 'system';
-  return localStorage.getItem(STORAGE_KEY) || 'system';
+  return readStoredValue(STORAGE_KEY, 'system');
 };
 
 const applyThemeToDocument = (theme) => {
@@ -26,7 +27,7 @@ export function ThemeProvider({ children }) {
     applyThemeToDocument(theme);
     const nextResolved = theme === 'system' ? getSystemPreference() : theme;
     setResolvedTheme(nextResolved);
-    localStorage.setItem(STORAGE_KEY, theme);
+    writeStoredValue(STORAGE_KEY, theme);
   }, [theme]);
 
   useEffect(() => {

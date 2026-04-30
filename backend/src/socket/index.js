@@ -4,12 +4,13 @@ import User from '../models/User.js';
 import Conversation from '../models/Conversation.js';
 import { sendMessage } from '../controllers/chat.controller.js';
 import { registerChatbotSocket } from './chatbot.socket.js';
+import { getAllowedOrigins } from '../config/origins.js';
 
 const onlineUsers = new Map();
 
 export const configureSocket = (server) => {
   const io = new Server(server, {
-    cors: { origin: process.env.CLIENT_URL || 'http://localhost:5173', credentials: true }
+    cors: { origin: getAllowedOrigins(), credentials: true }
   });
 
   io.use(async (socket, next) => {

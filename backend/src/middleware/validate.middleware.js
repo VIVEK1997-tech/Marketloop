@@ -1,9 +1,13 @@
 import { validationResult } from 'express-validator';
+import { sendError } from '../utils/apiResponse.js';
 
 export const validate = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(422).json({ message: 'Validation failed', errors: errors.array() });
+    return sendError(res, 'Validation failed', {
+      statusCode: 422,
+      details: errors.array()
+    });
   }
   next();
 };

@@ -8,7 +8,9 @@
     "dev": "nodemon --legacy-watch src/server.js",
     "prestart": "node scripts/free-port.js",
     "start": "node src/server.js",
-    "seed:sample": "node scripts/seed-sample-data.js"
+    "seed:sample": "node scripts/seed-sample-data.js",
+    "test:payments": "node --test tests/payments/*.test.js",
+    "test:data": "node --test tests/data-connection.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.expo/
 backend/uploads/*
 !backend/uploads/.gitkeep
 .env
@@ -8,3 +9,4 @@ backend/uploads/*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+backend/config/hdfc-smartgateway.config.json

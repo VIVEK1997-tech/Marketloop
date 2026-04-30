@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import { resolveUserRoles } from '../utils/roles.js';
+import { sendError } from '../utils/apiResponse.js';
 
 const getTokenFromHeader = (header = '') => (header.startsWith('Bearer ') ? header.split(' ')[1] : null);
 
@@ -10,20 +11,20 @@ export const protect = async (req, res, next) => {
     const token = getTokenFromHeader(header);
 
     if (!token) {
-      return res.status(401).json({ message: 'Authentication token is required' });
+      return sendError(res, 'Authentication token is required', { statusCode: 401 });
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.id).select('-password');
 
-    if (!user || user.isBanned) {
-      return res.status(401).json({ message: 'User is not authorized' });
+    if (!user || user.isBanned || user.accountStatus === 'deactivated') {
+      return sendError(res, 'User is not authorized', { statusCode: 401 });
     }
 
     req.user = user;
     next();
   } catch (error) {
-    res.status(401).json({ message: 'Invalid or expired token' });
+    return sendError(res, 'Invalid or expired token', { statusCode: 401 });
   }
 };
 
@@ -39,7 +40,7 @@ export const optionalProtect = async (req, _res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.id).select('-password');
 
-    if (user && !user.isBanned) {
+    if (user && !user.isBanned && user.accountStatus !== 'deactivated') {
       req.user = user;
     }
 
@@ -52,7 +53,7 @@ export const optionalProtect = async (req, _res, next) => {
 export const authorize = (...roles) => (req, res, next) => {
   const userRoles = resolveUserRoles(req.user);
   if (!roles.some((role) => userRoles.includes(role))) {
-    return res.status(403).json({ message: 'You do not have permission to perform this action' });
+    return sendError(res, 'You do not have permission to perform this action', { statusCode: 403 });
   }
   next();
 };

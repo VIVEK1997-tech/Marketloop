@@ -4,6 +4,7 @@ import { body } from 'express-validator';
 import { login, me, register, resendOtp, verifyOtp } from '../controllers/auth.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
 import { validate } from '../middleware/validate.middleware.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 const router = express.Router();
 
@@ -26,7 +27,7 @@ router.post(
   ],
   otpLimiter,
   validate,
-  register
+  asyncHandler(register)
 );
 
 router.post(
@@ -37,7 +38,7 @@ router.post(
   ],
   otpLimiter,
   validate,
-  verifyOtp
+  asyncHandler(verifyOtp)
 );
 
 router.post(
@@ -47,19 +48,20 @@ router.post(
   ],
   otpLimiter,
   validate,
-  resendOtp
+  asyncHandler(resendOtp)
 );
 
 router.post(
   '/login',
   [
     body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
-    body('password').notEmpty().withMessage('Password is required')
+    body('password').notEmpty().withMessage('Password is required'),
+    body('role').optional().isIn(['buyer', 'seller', 'admin']).withMessage('Role must be buyer, seller, or admin')
   ],
   validate,
-  login
+  asyncHandler(login)
 );
 
-router.get('/me', protect, me);
+router.get('/me', protect, asyncHandler(me));
 
 export default router;

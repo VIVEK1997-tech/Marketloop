@@ -1,6 +1,8 @@
 import Product from '../models/Product.js';
 import User from '../models/User.js';
 import { collectImageUrls } from '../utils/uploadImages.js';
+import { UOM_VALUES, getDefaultUnitForCategory } from '../utils/uom.js';
+import { sendError, sendSuccess } from '../utils/apiResponse.js';
 
 const parseNumber = (value) => {
   if (value === undefined || value === null || value === '') return undefined;
@@ -12,12 +14,12 @@ const parseNumber = (value) => {
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const categoryAliases = {
-  freshFruits: ['fresh fruits', 'fruit', 'fruits', 'apple', 'apples', 'banana', 'bananas', 'mango', 'mangoes', 'orange', 'oranges', 'grapes', 'papaya'],
-  freshVegetables: ['fresh vegetables', 'vegetable', 'vegetables', 'tomato', 'tomatoes', 'onion', 'onions', 'capsicum', 'cauliflower', 'brinjal'],
-  leafyGreens: ['leafy greens', 'greens', 'spinach', 'lettuce', 'mint', 'coriander', 'palak', 'greens bundle'],
-  rootVegetables: ['root vegetables', 'potato', 'potatoes', 'carrot', 'carrots', 'beetroot', 'radish', 'sweet potato'],
-  exoticFruits: ['exotic fruits', 'kiwi', 'dragon fruit', 'dragon fruits', 'avocado', 'avocados', 'berries', 'blueberries'],
-  herbsSeasonings: ['herbs & seasonings', 'herbs', 'seasonings', 'ginger', 'garlic', 'green chilli', 'chilli', 'curry leaves', 'basil'],
+  freshFruits: ['fresh fruits', 'fruit', 'fruits', 'apple', 'apples', 'banana', 'bananas', 'mango', 'mangoes', 'orange', 'oranges', 'grapes', 'papaya', 'pineapple', 'pomegranate', 'guava', 'chikoo', 'custard apple', 'amla', 'jamun', 'ber', 'bael', 'lemon', 'mosambi', 'sweet lime', 'watermelon', 'muskmelon', 'coconut', 'dates', 'fig', 'anjeer'],
+  freshVegetables: ['fresh vegetables', 'vegetable', 'vegetables', 'tomato', 'tomatoes', 'onion', 'onions', 'capsicum', 'cauliflower', 'brinjal', 'bhindi', 'ladyfinger', 'cabbage', 'peas', 'lauki', 'bottle gourd', 'tori', 'ridge gourd', 'sponge gourd', 'karela', 'bitter gourd', 'pumpkin', 'ash gourd', 'petha', 'snake gourd', 'french beans', 'cluster beans', 'gawar', 'broad beans', 'drumstick', 'broccoli', 'zucchini', 'mushroom', 'baby corn'],
+  leafyGreens: ['leafy greens', 'greens', 'spinach', 'lettuce', 'mint', 'coriander', 'palak', 'methi', 'fenugreek', 'sarson', 'mustard leaves', 'greens bundle'],
+  rootVegetables: ['root vegetables', 'potato', 'potatoes', 'carrot', 'carrots', 'beetroot', 'radish', 'turnip', 'sweet potato', 'yam', 'suran'],
+  exoticFruits: ['exotic fruits', 'kiwi', 'dragon fruit', 'dragon fruits', 'strawberry', 'strawberries', 'blueberry', 'blueberries', 'berries'],
+  herbsSeasonings: ['herbs & seasonings', 'herbs', 'seasonings', 'ginger', 'garlic', 'green chilli', 'chilli', 'spring onion', 'curry leaves', 'basil'],
   saladsSprouts: ['salads & sprouts', 'salads', 'sprouts', 'salad bowl', 'cucumber', 'salad leaves'],
   organicProduce: ['organic produce', 'organic', 'organic fruits', 'organic vegetables', 'organic veggie', 'organic fruit'],
   mobiles: ['mobile', 'mobiles', 'mobile phone', 'mobile phones', 'smartphone', 'smartphones', 'phone', 'phones'],
@@ -98,7 +100,7 @@ const scoreRecommendation = ({ candidate, currentProduct, affinityCategories, af
   let score = 0;
   const sameCategory = currentProduct ? candidate.category?.toLowerCase() === currentProduct.category?.toLowerCase() : false;
   const sameLocation = currentProduct ? candidate.location?.toLowerCase() === currentProduct.location?.toLowerCase() : false;
-  const priceClose = currentProduct ? getPriceClosenessScore(currentProduct.price, candidate.price) : 0;
+  const priceClose = currentProduct ? getPriceClosenessScore(currentProduct.normalizedPricePerKg || currentProduct.price, candidate.normalizedPricePerKg || candidate.price) : 0;
   const categoryAffinity = affinityCategories.has(candidate.category?.toLowerCase()) ? 24 : 0;
   const locationAffinity = affinityLocations.has(candidate.location?.toLowerCase()) ? 12 : 0;
   const wishlistMatch = wishlistIds.has(String(candidate._id));
@@ -159,11 +161,16 @@ const getUserAffinity = async (userId) => {
 export const createProduct = async (req, res) => {
   const images = await collectImageUrls(req, req.files, req.body.imageUrls ?? req.body.images);
   const { title, description, price, category, location, coordinates } = req.body;
+  const unit = UOM_VALUES.includes(req.body.unit) ? req.body.unit : getDefaultUnitForCategory(category);
 
   const product = await Product.create({
     title,
     description,
     price,
+    unit,
+    quantity: parseNumber(req.body.quantity),
+    crateWeightKg: parseNumber(req.body.crateWeightKg),
+    truckWeightKg: parseNumber(req.body.truckWeightKg),
     category,
     location,
     images,
@@ -171,7 +178,7 @@ export const createProduct = async (req, res) => {
     seller: req.user._id
   });
 
-  res.status(201).json({ product });
+  return sendSuccess(res, { product }, { statusCode: 201, message: 'Product created successfully' });
 };
 
 export const getProducts = async (req, res) => {
@@ -196,8 +203,8 @@ export const getProducts = async (req, res) => {
   }
 
   const sortMap = {
-    priceAsc: 'price',
-    priceDesc: '-price',
+    priceAsc: 'normalizedPricePerKg price',
+    priceDesc: '-normalizedPricePerKg -price',
     latest: '-createdAt',
     oldest: 'createdAt'
   };
@@ -207,7 +214,35 @@ export const getProducts = async (req, res) => {
     .sort(sortMap[sort] || sort)
     .limit(100);
 
-  res.json({ products });
+  return sendSuccess(res, { products });
+};
+
+export const getProductCategories = async (_req, res) => {
+  const categories = await Product.aggregate([
+    {
+      $match: {
+        status: 'available',
+        category: { $type: 'string', $ne: '' }
+      }
+    },
+    {
+      $group: {
+        _id: '$category',
+        count: { $sum: 1 }
+      }
+    },
+    {
+      $project: {
+        _id: 0,
+        value: '$_id',
+        label: '$_id',
+        count: 1
+      }
+    },
+    { $sort: { count: -1, label: 1 } }
+  ]);
+
+  return sendSuccess(res, { categories });
 };
 
 export const getNearbyProducts = async (req, res) => {
@@ -216,7 +251,7 @@ export const getNearbyProducts = async (req, res) => {
   const maxDistance = Number(req.query.distance || 25000);
 
   if (Number.isNaN(lng) || Number.isNaN(lat)) {
-    return res.status(400).json({ message: 'lng and lat query parameters are required' });
+    return sendError(res, 'lng and lat query parameters are required', { statusCode: 400 });
   }
 
   const products = await Product.find({
@@ -229,7 +264,7 @@ export const getNearbyProducts = async (req, res) => {
     }
   }).populate('seller', 'name phone profileImage online');
 
-  res.json({ products });
+  return sendSuccess(res, { products });
 };
 
 export const getProduct = async (req, res) => {
@@ -238,15 +273,15 @@ export const getProduct = async (req, res) => {
     'name phone profileImage location online createdAt averageRating totalReviews'
   );
 
-  if (!product) return res.status(404).json({ message: 'Product not found' });
-  res.json({ product });
+  if (!product) return sendError(res, 'Product not found', { statusCode: 404 });
+  return sendSuccess(res, { product });
 };
 
 export const getProductRecommendations = async (req, res) => {
   const currentProduct = await Product.findById(req.params.id).populate('seller', 'name phone profileImage location online createdAt');
 
   if (!currentProduct) {
-    return res.status(404).json({ message: 'Product not found' });
+    return sendError(res, 'Product not found', { statusCode: 404 });
   }
 
   const { wishlistIds, affinityCategories, affinityLocations } = await getUserAffinity(req.user?._id);
@@ -282,7 +317,7 @@ export const getProductRecommendations = async (req, res) => {
     .sort((a, b) => b.recommendationScore - a.recommendationScore)
     .slice(0, 6);
 
-  res.json({
+  return sendSuccess(res, {
     recommendations,
     meta: {
       model: 'MarketLoop SmartMatch v1',
@@ -328,7 +363,7 @@ export const getPersonalizedRecommendations = async (req, res) => {
     .sort((a, b) => b.recommendationScore - a.recommendationScore)
     .slice(0, 8);
 
-  res.json({
+  return sendSuccess(res, {
     recommendations,
     meta: {
       model: 'MarketLoop SmartMatch v1',
@@ -339,31 +374,34 @@ export const getPersonalizedRecommendations = async (req, res) => {
 
 export const updateProduct = async (req, res) => {
   const product = await Product.findById(req.params.id);
-  if (!product) return res.status(404).json({ message: 'Product not found' });
+  if (!product) return sendError(res, 'Product not found', { statusCode: 404 });
   if (!product.seller.equals(req.user._id) && req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Only the seller can update this listing' });
+    return sendError(res, 'Only the seller can update this listing', { statusCode: 403 });
   }
 
   const images = await collectImageUrls(req, req.files, req.body.imageUrls ?? req.body.images);
-  const updates = ['title', 'description', 'price', 'category', 'location', 'coordinates', 'status'].reduce((data, key) => {
+  const updates = ['title', 'description', 'price', 'unit', 'quantity', 'crateWeightKg', 'truckWeightKg', 'category', 'location', 'coordinates', 'status'].reduce((data, key) => {
     if (req.body[key] !== undefined) data[key] = req.body[key];
     return data;
   }, {});
+  ['price', 'quantity', 'crateWeightKg', 'truckWeightKg'].forEach((key) => {
+    if (updates[key] !== undefined) updates[key] = parseNumber(updates[key]);
+  });
   if (images.length) updates.images = images;
 
   Object.assign(product, updates);
   await product.save();
-  res.json({ product });
+  return sendSuccess(res, { product }, { message: 'Product updated successfully' });
 };
 
 export const deleteProduct = async (req, res) => {
   const product = await Product.findById(req.params.id);
-  if (!product) return res.status(404).json({ message: 'Product not found' });
+  if (!product) return sendError(res, 'Product not found', { statusCode: 404 });
   if (!product.seller.equals(req.user._id) && req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Only the seller can delete this listing' });
+    return sendError(res, 'Only the seller can delete this listing', { statusCode: 403 });
   }
   await product.deleteOne();
-  res.json({ message: 'Product deleted' });
+  return sendSuccess(res, {}, { message: 'Product deleted' });
 };
 
 export const markSold = async (req, res) => {
@@ -374,5 +412,5 @@ export const markSold = async (req, res) => {
 export const getSellerProducts = async (req, res) => {
   const seller = req.params.sellerId || req.user._id;
   const products = await Product.find({ seller }).sort('-createdAt');
-  res.json({ products });
+  return sendSuccess(res, { products });
 };

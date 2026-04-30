@@ -1,6 +1,7 @@
 import Conversation from '../models/Conversation.js';
 import Message from '../models/Message.js';
 import Product from '../models/Product.js';
+import { sendSuccess } from '../utils/apiResponse.js';
 
 export const getOrCreateConversation = async ({ buyerId, sellerId, productId }) => {
   const participants = [buyerId, sellerId].sort();
@@ -37,7 +38,7 @@ export const createConversation = async (req, res) => {
     productId: req.body.productId
   });
   await conversation.populate('participants', 'name profileImage online');
-  res.status(201).json({ conversation });
+  return sendSuccess(res, { conversation }, { statusCode: 201, message: 'Conversation ready' });
 };
 
 export const getConversations = async (req, res) => {
@@ -47,7 +48,7 @@ export const getConversations = async (req, res) => {
     .populate('lastMessage')
     .sort('-updatedAt');
 
-  res.json({ conversations });
+  return sendSuccess(res, { conversations });
 };
 
 export const getMessages = async (req, res) => {
@@ -55,7 +56,24 @@ export const getMessages = async (req, res) => {
   if (!conversation) return res.status(404).json({ message: 'Conversation not found' });
 
   const messages = await Message.find({ conversation: conversation._id }).populate('sender receiver', 'name profileImage').sort('createdAt');
-  res.json({ messages });
+  return sendSuccess(res, { messages });
+};
+
+export const postConversationMessage = async (req, res) => {
+  const conversation = await Conversation.findOne({ _id: req.params.conversationId, participants: req.user._id }).populate('participants', 'name profileImage');
+  if (!conversation) return res.status(404).json({ message: 'Conversation not found' });
+
+  const receiverId = conversation.participants.find((participant) => participant._id.toString() !== req.user._id.toString())?._id?.toString();
+  if (!receiverId) return res.status(400).json({ message: 'Conversation receiver not found' });
+
+  const message = await sendMessage({
+    conversationId: conversation._id.toString(),
+    senderId: req.user._id.toString(),
+    receiverId,
+    message: req.body.message
+  });
+
+  return sendSuccess(res, { message }, { statusCode: 201, message: 'Message sent successfully' });
 };
 
 export const sendMessage = async ({ conversationId, senderId, receiverId, message }) => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { CreditCard, LogOut, Shield, Store } from 'lucide-react';
 import AvatarSelector from '../components/AvatarSelector.jsx';
 import ProductCard from '../components/ProductCard.jsx';
@@ -7,7 +7,8 @@ import ProfileCard from '../components/ProfileCard.jsx';
 import ProfileTabs from '../components/ProfileTabs.jsx';
 import ReviewCard from '../components/ReviewCard.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import { api, getErrorMessage } from '../services/api.js';
+import { api, extractApiData, getErrorMessage } from '../services/api.js';
+import { readStoredJson, writeStoredJson } from '../utils/storage.js';
 
 const tabs = [
   { id: 'profile', label: 'Profile Info' },
@@ -54,6 +55,7 @@ function SkeletonPanel() {
 }
 
 export default function Dashboard() {
+  const location = useLocation();
   const { user, setUser, logout } = useAuth();
   const [profileData, setProfileData] = useState(null);
   const [profile, setProfile] = useState(createProfileState(user));
@@ -72,21 +74,61 @@ export default function Dashboard() {
   const isSeller = userRoles.includes('seller') || userRoles.includes('admin');
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const requestedTab = params.get('tab');
+    const sellIntent = params.get('intent') === 'sell' || location.state?.sellIntent;
+    const validTab = tabs.some((tab) => tab.id === requestedTab);
+
+    if (validTab && requestedTab && requestedTab !== activeTab) {
+      setActiveTab(requestedTab);
+    }
+
+    if (sellIntent && !isSeller) {
+      setActiveTab('settings');
+      setToast(location.state?.sellMessage || 'Enable seller access first, then switch to Seller mode to start listing.');
+    }
+  }, [location.search, location.state, isSeller]);
+
+  useEffect(() => {
     setLoading(true);
-    api.get('/users/profile')
-      .then(({ data }) => {
-        setProfileData(data.user);
-        setStats(data.stats);
-        const savedDraft = localStorage.getItem(draftKey(data.user.id));
-        const nextProfile = savedDraft ? JSON.parse(savedDraft) : createProfileState(data.user);
+    const dashboardPath = isSeller ? '/seller/dashboard' : '/buyer/dashboard';
+    Promise.all([api.get('/me'), api.get(dashboardPath)])
+      .then(([meResponse, dashboardResponse]) => {
+        const meData = extractApiData(meResponse);
+        const dashboardData = extractApiData(dashboardResponse);
+        const nextUser = dashboardData.user || meData.user;
+        const nextStats = isSeller
+          ? {
+              listingsCount: dashboardData.summary?.listingsCount || 0,
+              wishlistCount: 0,
+              conversationCount: dashboardData.summary?.buyerChatsCount || 0,
+              averageRating: nextUser?.averageRating ?? 0,
+              totalReviews: nextUser?.totalReviews ?? 0,
+              memberSince: nextUser?.createdAt
+            }
+          : {
+              listingsCount: 0,
+              wishlistCount: dashboardData.summary?.wishlistCount || 0,
+              conversationCount: 0,
+              averageRating: nextUser?.averageRating ?? 0,
+              totalReviews: nextUser?.totalReviews ?? 0,
+              memberSince: nextUser?.createdAt
+            };
+
+        setProfileData(nextUser);
+        setStats(nextStats);
+        const nextProfile = readStoredJson(draftKey(nextUser.id), createProfileState(nextUser));
         setProfile(nextProfile);
       })
+      .catch((error) => {
+        setToast(getErrorMessage(error));
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [isSeller]);
 
   useEffect(() => {
     if (!profileData?.id) return;
-    localStorage.setItem(draftKey(profileData.id), JSON.stringify(profile));
+    writeStoredJson(draftKey(profileData.id), profile);
   }, [profile, profileData?.id]);
 
   const dirty = useMemo(() => JSON.stringify(profile) !== JSON.stringify(createProfileState(profileData || user)), [profile, profileData, user]);
@@ -112,14 +154,16 @@ export default function Dashboard() {
     if (activeTab === 'listings' && isSeller && !sellerProducts.length) {
       setTabLoading(true);
       api.get('/products/seller/me')
-        .then(({ data }) => setSellerProducts(data.products))
+        .then((response) => setSellerProducts(extractApiData(response).products || []))
+        .catch((error) => setToast(getErrorMessage(error)))
         .finally(() => setTabLoading(false));
     }
 
     if (activeTab === 'reviews' && !sellerReviews.length) {
       setTabLoading(true);
       api.get(`/users/${profileData.id}/ratings`)
-        .then(({ data }) => setSellerReviews(data.reviews || []))
+        .then((response) => setSellerReviews(extractApiData(response).reviews || []))
+        .catch((error) => setToast(getErrorMessage(error)))
         .finally(() => setTabLoading(false));
     }
   }, [activeTab, isSeller, sellerProducts.length, sellerReviews.length, profileData?.id]);
@@ -143,7 +187,8 @@ export default function Dashboard() {
 
     setSaving(true);
     try {
-      const { data } = await api.put('/users/profile', profile);
+      const response = await api.put('/me', profile);
+      const data = extractApiData(response);
       setUser(data.user);
       setProfileData(data.user);
       localStorage.removeItem(draftKey(data.user.id));
@@ -156,22 +201,36 @@ export default function Dashboard() {
   };
 
   const markSold = async (id) => {
-    const { data } = await api.patch(`/products/${id}/sold`);
-    setSellerProducts((current) => current.map((product) => (product._id === id ? data.product : product)));
+    try {
+      const response = await api.patch(`/products/${id}/sold`);
+      const data = extractApiData(response);
+      setSellerProducts((current) => current.map((product) => (product._id === id ? data.product : product)));
+      setToast('Listing marked as sold');
+    } catch (error) {
+      setToast(getErrorMessage(error));
+    }
   };
 
   const deleteListing = async (id) => {
-    await api.delete(`/products/${id}`);
-    setSellerProducts((current) => current.filter((product) => product._id !== id));
+    try {
+      await api.delete(`/products/${id}`);
+      setSellerProducts((current) => current.filter((product) => product._id !== id));
+      setToast('Listing deleted successfully');
+    } catch (error) {
+      setToast(getErrorMessage(error));
+    }
   };
 
   const enableSellerAccess = async () => {
     setRoleLoading(true);
     try {
-      const { data } = await api.post('/users/roles/become-seller');
+      const response = await api.post('/users/roles/become-seller');
+      const data = extractApiData(response);
       setUser(data.user);
       setProfileData(data.user);
       setToast(data.message);
+    } catch (error) {
+      setToast(getErrorMessage(error));
     } finally {
       setRoleLoading(false);
     }
@@ -180,10 +239,13 @@ export default function Dashboard() {
   const switchRole = async (role) => {
     setRoleLoading(true);
     try {
-      const { data } = await api.post('/users/roles/switch', { role });
+      const response = await api.post('/users/roles/switch', { role });
+      const data = extractApiData(response);
       setUser(data.user);
       setProfileData(data.user);
       setToast(data.message);
+    } catch (error) {
+      setToast(getErrorMessage(error));
     } finally {
       setRoleLoading(false);
     }
@@ -380,9 +442,14 @@ export default function Dashboard() {
                 <div className="card">
                   <h3 className="text-xl font-black text-slate-900">Payments & orders</h3>
                   <p className="mt-2 text-sm text-slate-500">Review Razorpay transactions, receipts, and payment status in one place.</p>
-                  <Link className="btn-secondary mt-4 gap-2" to="/payments">
-                    <CreditCard size={16} /> Open payment history
-                  </Link>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Link className="btn-secondary gap-2" to="/payments">
+                      <CreditCard size={16} /> Open payment history
+                    </Link>
+                    <Link className="btn-secondary gap-2" to="/invoices">
+                      <CreditCard size={16} /> Open invoices
+                    </Link>
+                  </div>
                 </div>
 
                 <div className="card">
